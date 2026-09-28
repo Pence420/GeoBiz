@@ -1,0 +1,69 @@
+from app.imports.contracts import SourceIdentity
+from app.imports.osm import (
+    classify_osm_tags,
+    is_exact_duplicate,
+    parse_overpass_businesses,
+)
+
+
+def test_maps_supported_real_business_tags() -> None:
+    assert classify_osm_tags({"amenity": "restaurant"}) == "restaurant"
+    assert classify_osm_tags({"leisure": "fitness_centre"}) == "gym"
+    assert classify_osm_tags({"amenity": "pharmacy"}) == "pharmacy"
+    assert classify_osm_tags({"healthcare": "pharmacy"}) == "pharmacy"
+
+
+def test_rejects_unrelated_or_ambiguous_tags() -> None:
+    assert classify_osm_tags({"amenity": "cafe"}) is None
+    assert classify_osm_tags({"leisure": "fitness_station"}) is None
+    assert classify_osm_tags({"shop": "chemist"}) is None
+
+
+def test_same_source_record_is_duplicate_but_nearby_branch_is_not() -> None:
+    existing = SourceIdentity(provider="osm", source_type="node", source_record_id="123")
+
+    assert is_exact_duplicate(
+        existing,
+        SourceIdentity(provider="osm", source_type="node", source_record_id="123"),
+    )
+    assert not is_exact_duplicate(
+        existing,
+        SourceIdentity(provider="osm", source_type="node", source_record_id="124"),
+    )
+
+
+def test_parses_nodes_and_way_centres_without_inventing_names() -> None:
+    payload = {
+        "osm3s": {"timestamp_osm_base": "2026-09-28T12:00:00Z"},
+        "elements": [
+            {
+                "type": "node",
+                "id": 10,
+                "lat": -6.2,
+                "lon": 106.8,
+                "tags": {"amenity": "restaurant", "name": "Warung Nyata"},
+            },
+            {
+                "type": "way",
+                "id": 11,
+                "center": {"lat": -6.21, "lon": 106.81},
+                "tags": {"leisure": "fitness_centre"},
+            },
+            {
+                "type": "node",
+                "id": 12,
+                "lat": -6.22,
+                "lon": 106.82,
+                "tags": {"amenity": "cafe", "name": "Not a Restaurant"},
+            },
+        ],
+    }
+
+    records = parse_overpass_businesses(payload)
+
+    assert [(record.category_slug, record.name) for record in records] == [
+        ("restaurant", "Warung Nyata"),
+        ("gym", None),
+    ]
+    assert records[1].identity.source_type == "way"
+    assert records[1].longitude == 106.81
