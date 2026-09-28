@@ -1,0 +1,47 @@
+services:
+  db:
+    image: postgis/postgis:17-3.5
+    platform: linux/amd64
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-geobiz}
+      POSTGRES_USER: ${POSTGRES_USER:-geobiz}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-geobiz}
+    ports:
+      - "5432:5432"
+    volumes:
+      - geobiz-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build:
+      context: ./backend
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg://geobiz:geobiz@db:5432/geobiz}
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+    depends_on:
+      db:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ./frontend
+    environment:
+      VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:8000/api}
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend:/app
+      - geobiz-node-modules:/app/node_modules
+    depends_on:
+      - backend
+
+volumes:
+  geobiz-postgres:
+  geobiz-node-modules:
