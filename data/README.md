@@ -31,6 +31,17 @@ docker compose run --rm backend python -m app.imports.cli promote-osm \
   /data/processed/osm-dki-businesses.staged.json \
   --raw /data/raw/jakarta.osm.pbf \
   --manifest /data/manifests/osm-dki-businesses-2026-09-29.json
+
+docker compose run --rm backend python -m app.imports.cli promote-boundary \
+  /data/raw/dki-boundary.geojson \
+  --manifest /data/manifests/osm-dki-boundary-2026-09-29.json
+
+docker compose run --rm backend python -m app.imports.cli promote-gtfs \
+  /data/raw/transjakarta-gtfs.zip \
+  --manifest /data/manifests/transjakarta-gtfs-2026-07-24.json \
+  --boundary /data/raw/dki-boundary.geojson \
+  --boundary-manifest /data/manifests/osm-dki-boundary-2026-09-29.json \
+  --report /data/manifests/transjakarta-gtfs-2026-07-24.quality.json
 ```
 
 Promotion replaces the previous snapshot from the same dataset source inside one

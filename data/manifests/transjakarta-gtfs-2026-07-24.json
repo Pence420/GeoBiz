@@ -1,0 +1,10 @@
+{
+  "dataset_slug": "transjakarta-gtfs",
+  "source_name": "GTFS Static Transjakarta",
+  "source_url": "https://gtfs.transjakarta.co.id/files/file_gtfs.zip",
+  "source_license": "Creative Commons Attribution 4.0 International (CC BY 4.0)",
+  "source_observed_at": "2026-07-24",
+  "retrieved_at": "2026-09-29T15:46:00Z",
+  "sha256": "63b4fb14d9afa7fd21737fee57991366b3f61746af12479725cc17d0cf64fb22",
+  "local_filename": "transjakarta-gtfs.zip"
+}

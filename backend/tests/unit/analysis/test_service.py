@@ -1,0 +1,88 @@
+import pytest
+
+from app.analysis.contracts import (
+    AnalyzeLocationRequest,
+    ContainingArea,
+    NearbyMetrics,
+)
+from app.analysis.service import AnalysisService, LocationOutsideCoverageError
+from app.scoring.domain import ScoreResult
+
+
+class FakeRepository:
+    def __init__(self, area: ContainingArea | None) -> None:
+        self.area = area
+
+    def find_containing_area(self, **_coordinates):
+        return self.area
+
+    def calculate_metrics(self, **_arguments):
+        return NearbyMetrics(
+            competitor_count=4,
+            transport_stop_count=None,
+            commercial_poi_count=None,
+            office_count=None,
+            university_count=None,
+            healthcare_count=None,
+            population_density=None,
+            nearest_major_road_m=None,
+        )
+
+
+def test_point_outside_dki_is_rejected() -> None:
+    service = AnalysisService(
+        repository=FakeRepository(None),
+        score_provider=lambda **_kwargs: None,
+        fingerprint_provider=lambda: "dataset-v1",
+    )
+
+    with pytest.raises(LocationOutsideCoverageError) as error:
+        service.analyze(
+            AnalyzeLocationRequest(
+                longitude=110, latitude=-7, business_category="restaurant"
+            )
+        )
+
+    assert error.value.code == "LOCATION_OUTSIDE_COVERAGE"
+
+
+def test_missing_source_metrics_are_forwarded_as_none_not_zero() -> None:
+    captured = {}
+
+    def score_provider(**kwargs):
+        captured.update(kwargs)
+        return ScoreResult(
+            status="incomplete",
+            final_score=None,
+            label=None,
+            raw_factors=kwargs["raw_factors"],
+            normalized_factors={key: None for key in kwargs["raw_factors"]},
+            weights={"population_density": 1.0},
+            missing_factors=["population_density"],
+            scoring_version="v1.0.0",
+            profile_id=1,
+        )
+
+    service = AnalysisService(
+        repository=FakeRepository(
+            ContainingArea(
+                id=1,
+                name="DKI Jakarta",
+                official_code="ID-JK",
+                population_density=None,
+            )
+        ),
+        score_provider=score_provider,
+        fingerprint_provider=lambda: "dataset-v1",
+    )
+
+    response = service.analyze(
+        AnalyzeLocationRequest(
+            longitude=106.8, latitude=-6.2, business_category="restaurant"
+        )
+    )
+
+    assert captured["raw_factors"]["competition"] == 4
+    assert captured["raw_factors"]["population_density"] is None
+    assert captured["raw_factors"]["public_transport"] is None
+    assert response.score.status == "incomplete"
