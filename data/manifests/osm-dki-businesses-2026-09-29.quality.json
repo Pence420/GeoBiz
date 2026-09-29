@@ -1,0 +1,16 @@
+{
+  "total_records": 2422,
+  "promoted_records": 2184,
+  "invalid_geometry_count": 0,
+  "missing_name_count": 63,
+  "exact_duplicate_count": 0,
+  "duplicate_candidate_count": 0,
+  "outside_coverage_count": 238,
+  "administrative_join_rate": null,
+  "category_counts": {
+    "restaurant": 1826,
+    "pharmacy": 305,
+    "gym": 53
+  },
+  "failures": []
+}

@@ -1,11 +1,42 @@
+from collections import Counter
+from collections.abc import Sequence
+
 from app.imports.contracts import ImportQualityReport
+from app.imports.osm import OsmBusinessRecord
 
 
 class ImportQualityError(ValueError):
     pass
 
 
+def build_osm_quality_report(
+    records: Sequence[OsmBusinessRecord],
+    *,
+    total_records: int,
+    outside_coverage_count: int,
+    exact_duplicate_count: int = 0,
+) -> ImportQualityReport:
+    coordinate_groups = Counter(
+        (record.category_slug, record.longitude, record.latitude) for record in records
+    )
+    duplicate_candidates = sum(count - 1 for count in coordinate_groups.values())
+    return ImportQualityReport(
+        total_records=total_records,
+        promoted_records=len(records),
+        invalid_geometry_count=0,
+        missing_name_count=sum(record.name is None for record in records),
+        exact_duplicate_count=exact_duplicate_count,
+        duplicate_candidate_count=duplicate_candidates,
+        outside_coverage_count=outside_coverage_count,
+        administrative_join_rate=None,
+        category_counts=dict(Counter(record.category_slug for record in records)),
+        failures=[],
+    )
+
+
 def assert_demo_quality(report: ImportQualityReport) -> None:
+    if report.failures:
+        raise ImportQualityError("quality report contains failures: " + "; ".join(report.failures))
     if report.invalid_geometry_count:
         raise ImportQualityError("invalid geometries must be resolved before promotion")
     if (

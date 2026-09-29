@@ -1,7 +1,10 @@
+import pytest
+
 from app.imports.contracts import SourceIdentity
 from app.imports.osm import (
     classify_osm_tags,
     is_exact_duplicate,
+    parse_osmium_geojson,
     parse_overpass_businesses,
 )
 
@@ -67,3 +70,42 @@ def test_parses_nodes_and_way_centres_without_inventing_names() -> None:
     ]
     assert records[1].identity.source_type == "way"
     assert records[1].longitude == 106.81
+
+
+def test_parses_osmium_geojson_points_and_polygon_centroids() -> None:
+    payload = {
+        "type": "FeatureCollection",
+        "features": [
+            {
+                "type": "Feature",
+                "id": "n123",
+                "properties": {"amenity": "restaurant", "name": "Sate Asli"},
+                "geometry": {"type": "Point", "coordinates": [106.82, -6.2]},
+            },
+            {
+                "type": "Feature",
+                "id": "w456",
+                "properties": {"leisure": "fitness_centre"},
+                "geometry": {
+                    "type": "Polygon",
+                    "coordinates": [[
+                        [106.80, -6.22],
+                        [106.82, -6.22],
+                        [106.82, -6.20],
+                        [106.80, -6.20],
+                        [106.80, -6.22],
+                    ]],
+                },
+            },
+        ],
+    }
+
+    records = parse_osmium_geojson(payload)
+
+    assert [(r.identity.source_type, r.identity.source_record_id) for r in records] == [
+        ("node", "123"),
+        ("way", "456"),
+    ]
+    assert records[1].name is None
+    assert records[1].longitude == pytest.approx(106.81)
+    assert records[1].latitude == pytest.approx(-6.21)

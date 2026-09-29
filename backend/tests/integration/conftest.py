@@ -15,5 +15,10 @@ def db_session() -> Generator[Session, None, None]:
         get_settings().database_url,
     )
     engine = create_engine(database_url)
-    with Session(engine) as session:
-        yield session
+    with engine.connect() as connection:
+        transaction = connection.begin()
+        with Session(bind=connection) as session:
+            yield session
+            session.close()
+        transaction.rollback()
+    engine.dispose()

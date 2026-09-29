@@ -10,5 +10,29 @@ Rules:
 - Keep OpenStreetMap attribution visible in the application: `© OpenStreetMap contributors`.
 - Test-only synthetic fixtures belong under `backend/tests/fixtures/` and must never be promoted to the demo database.
 
-The initial OSM business snapshot is reproduced with `data/queries/dki-businesses.overpassql`. Public Overpass servers are used only for offline imports, never for user requests.
+The initial business snapshot uses the daily Jakarta `.osm.pbf` extract from
+`download.openstreetmap.fr`. The saved Overpass queries remain a smaller-source
+fallback. Both paths are offline imports only and are never called by user requests.
 
+## Reproduce the 2026-09-29 business snapshot
+
+Download the raw files named by the committed manifests into `data/raw/`, then run:
+
+```bash
+docker compose run --rm backend python -m app.imports.cli stage-osm \
+  /data/raw/jakarta.osm.pbf \
+  --manifest /data/manifests/osm-dki-businesses-2026-09-29.json \
+  --boundary /data/raw/dki-boundary.geojson \
+  --boundary-manifest /data/manifests/osm-dki-boundary-2026-09-29.json \
+  --output /data/processed/osm-dki-businesses.staged.json \
+  --report /data/manifests/osm-dki-businesses-2026-09-29.quality.json
+
+docker compose run --rm backend python -m app.imports.cli promote-osm \
+  /data/processed/osm-dki-businesses.staged.json \
+  --raw /data/raw/jakarta.osm.pbf \
+  --manifest /data/manifests/osm-dki-businesses-2026-09-29.json
+```
+
+Promotion replaces the previous snapshot from the same dataset source inside one
+database transaction. A checksum mismatch, missing category, invalid geometry,
+duplicate source identity, or other failed quality gate aborts the whole batch.

@@ -1,0 +1,10 @@
+{
+  "dataset_slug": "osm-dki-boundary",
+  "source_name": "OpenStreetMap DKI Jakarta administrative boundary via Nominatim",
+  "source_url": "https://nominatim.openstreetmap.org/search?format=geojson&polygon_geojson=1&countrycodes=id&limit=1&q=Daerah%20Khusus%20Ibukota%20Jakarta",
+  "source_license": "Open Database License (ODbL) 1.0",
+  "source_observed_at": "2026-09-29",
+  "retrieved_at": "2026-09-29T15:33:38Z",
+  "sha256": "33480daee4cf9c79e142a883ca2490df3c5cf58040fd58c701708860747a69d4",
+  "local_filename": "dki-boundary.geojson"
+}

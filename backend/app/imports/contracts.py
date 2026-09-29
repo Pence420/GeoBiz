@@ -30,7 +30,7 @@ class ImportQualityReport(BaseModel):
     missing_name_count: NonNegativeInt
     exact_duplicate_count: NonNegativeInt
     duplicate_candidate_count: NonNegativeInt
+    outside_coverage_count: NonNegativeInt = 0
     administrative_join_rate: Annotated[float, Field(ge=0, le=1)] | None = None
     category_counts: dict[str, NonNegativeInt]
     failures: list[str]
-
