@@ -12,13 +12,15 @@
   },
   "dependencies": {
     "@vitejs/plugin-react": "latest",
-    "vite": "latest",
+    "maplibre-gl": "^6.11.2",
     "react": "latest",
-    "react-dom": "latest"
+    "react-dom": "latest",
+    "vite": "latest"
   },
   "devDependencies": {
     "@testing-library/jest-dom": "latest",
     "@testing-library/react": "latest",
+    "@types/geojson": "^7946.0.16",
     "@types/react": "latest",
     "@types/react-dom": "latest",
     "jsdom": "latest",
