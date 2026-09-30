@@ -125,7 +125,7 @@ def parse_osmium_geojson(payload: Mapping[str, Any]) -> list[OsmBusinessRecord]:
         if parsed_identity is None or parsed_identity in seen:
             continue
 
-        centre = _geometry_bbox_centre(geometry)
+        centre = geometry_bbox_centre(geometry)
         if centre is None:
             continue
         longitude, latitude = centre
@@ -176,7 +176,7 @@ def _parse_osm_feature_identity(
     )
 
 
-def _geometry_bbox_centre(geometry: Mapping[str, Any]) -> tuple[float, float] | None:
+def geometry_bbox_centre(geometry: Mapping[str, Any]) -> tuple[float, float] | None:
     coordinates = geometry.get("coordinates")
     values: list[tuple[float, float]] = []
 

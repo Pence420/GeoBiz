@@ -1,7 +1,11 @@
 import pytest
 
 from app.scoring.domain import NormalizationProfileData
-from app.scoring.profiles import ProfileMismatchError, validate_profile_scope
+from app.scoring.profiles import (
+    ProfileMismatchError,
+    percentile_breakpoints,
+    validate_profile_scope,
+)
 
 
 def test_profile_must_match_category_radius_and_dataset() -> None:
@@ -40,3 +44,13 @@ def test_profile_rejects_wrong_dataset_fingerprint() -> None:
             radius_m=1000,
             dataset_fingerprint="new-data",
         )
+
+
+def test_percentile_breakpoints_winsorize_at_fifth_and_ninety_fifth() -> None:
+    values = list(range(101))
+
+    breakpoints = percentile_breakpoints(values)
+
+    assert breakpoints[0] == 5.0
+    assert breakpoints[-1] == 95.0
+    assert len(breakpoints) == 19

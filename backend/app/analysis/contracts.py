@@ -16,6 +16,7 @@ class ContainingArea(BaseModel):
     id: int
     name: str
     official_code: str | None
+    coverage_official_code: str | None = None
     population_density: float | None
 
 

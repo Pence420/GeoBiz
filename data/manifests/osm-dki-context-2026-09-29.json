@@ -1,0 +1,10 @@
+{
+  "dataset_slug": "osm-dki-context",
+  "source_name": "OpenStreetMap Jakarta context extract",
+  "source_url": "https://download.openstreetmap.fr/extracts/asia/indonesia/jakarta.osm.pbf",
+  "source_license": "Open Database License (ODbL) 1.0",
+  "source_observed_at": "2026-09-29",
+  "retrieved_at": "2026-09-29T15:33:38Z",
+  "sha256": "040353f3b5734c8d9c280186b0444b7a9003a80fffa1e03cb8be0e21e3a827c1",
+  "local_filename": "jakarta.osm.pbf"
+}

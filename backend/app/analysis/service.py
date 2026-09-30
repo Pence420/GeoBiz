@@ -50,7 +50,9 @@ class AnalysisService:
         area = self.repository.find_containing_area(
             longitude=request.longitude, latitude=request.latitude
         )
-        if area is None or area.official_code != "ID-JK":
+        if area is None or (
+            area.coverage_official_code or area.official_code
+        ) != "ID-JK":
             raise LocationOutsideCoverageError()
 
         metrics = self.repository.calculate_metrics(

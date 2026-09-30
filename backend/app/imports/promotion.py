@@ -6,7 +6,7 @@ from collections.abc import Mapping
 from typing import Any
 
 from geoalchemy2.elements import WKTElement
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, text
 from sqlalchemy.orm import Session
 
 from app.db.models import (
@@ -15,12 +15,20 @@ from app.db.models import (
     BusinessCategory,
     DatasetSource,
     ImportRun,
+    Poi,
+    Road,
     TransportStop,
 )
 from app.imports.contracts import ImportManifest, ImportQualityReport, SourceIdentity
 from app.imports.osm import OsmBusinessRecord
+from app.imports.osm_context import (
+    OsmContextQualityReport,
+    OsmPoiRecord,
+    OsmRoadRecord,
+)
 from app.imports.gtfs import GtfsQualityReport, GtfsStopRecord
 from app.imports.quality import ImportQualityError, assert_demo_quality
+from app.imports.population import JoinedKelurahan, PopulationQualityReport
 
 
 class DuplicateSourceRecordError(ValueError):
@@ -96,6 +104,238 @@ def promote_gtfs_stops(
         session.add(run)
         session.flush()
         return run.id
+
+
+def promote_osm_context(
+    session: Session,
+    manifest: ImportManifest,
+    pois: Sequence[OsmPoiRecord],
+    roads: Sequence[OsmRoadRecord],
+    report: OsmContextQualityReport,
+) -> int:
+    if report.duplicate_source_id_count:
+        raise DuplicateSourceRecordError("OSM context source identities must be unique")
+    if report.promoted_pois != len(pois) or report.promoted_roads != len(roads):
+        raise ImportQualityError("OSM context report does not match staged records")
+
+    with session.begin_nested():
+        source = session.scalar(
+            select(DatasetSource).where(DatasetSource.slug == manifest.dataset_slug)
+        )
+        if source is None:
+            source = DatasetSource(
+                slug=manifest.dataset_slug,
+                provider="OpenStreetMap",
+                source_url=str(manifest.source_url),
+                license_name=manifest.source_license,
+                attribution="© OpenStreetMap contributors",
+                observed_at=manifest.source_observed_at,
+                retrieved_at=manifest.retrieved_at,
+                sha256=manifest.sha256,
+            )
+            session.add(source)
+            session.flush()
+        else:
+            source.observed_at = manifest.source_observed_at
+            source.retrieved_at = manifest.retrieved_at
+            source.sha256 = manifest.sha256
+
+        session.execute(delete(Poi).where(Poi.dataset_source_id == source.id))
+        session.execute(delete(Road).where(Road.dataset_source_id == source.id))
+        if pois:
+            session.execute(
+                text(
+                    """
+                    INSERT INTO pois (
+                        dataset_source_id, name, poi_type, source_type,
+                        source_record_id, retrieved_at, original_tags, geom
+                    ) VALUES (
+                        :dataset_source_id, :name, :poi_type, :source_type,
+                        :source_record_id, :retrieved_at, CAST(:tags AS jsonb),
+                        ST_SetSRID(ST_GeomFromGeoJSON(:geometry), 4326)
+                    )
+                    """
+                ),
+                [
+                    {
+                        "dataset_source_id": source.id,
+                        "name": record.name,
+                        "poi_type": record.poi_type,
+                        "source_type": record.source_type,
+                        "source_record_id": record.source_record_id,
+                        "retrieved_at": manifest.retrieved_at,
+                        "tags": json.dumps(record.tags),
+                        "geometry": json.dumps(record.geometry),
+                    }
+                    for record in pois
+                ],
+            )
+        if roads:
+            session.execute(
+                text(
+                    """
+                    INSERT INTO roads (
+                        dataset_source_id, name, road_type, source_type,
+                        source_record_id, retrieved_at, original_tags, geom
+                    ) VALUES (
+                        :dataset_source_id, :name, :road_type, :source_type,
+                        :source_record_id, :retrieved_at, CAST(:tags AS jsonb),
+                        ST_Multi(ST_SetSRID(ST_GeomFromGeoJSON(:geometry), 4326))
+                    )
+                    """
+                ),
+                [
+                    {
+                        "dataset_source_id": source.id,
+                        "name": record.name,
+                        "road_type": record.road_type,
+                        "source_type": record.source_type,
+                        "source_record_id": record.source_record_id,
+                        "retrieved_at": manifest.retrieved_at,
+                        "tags": json.dumps(record.tags),
+                        "geometry": json.dumps(record.geometry),
+                    }
+                    for record in roads
+                ],
+            )
+        run = ImportRun(
+            dataset_source_id=source.id,
+            status="promoted",
+            manifest=manifest.model_dump(mode="json"),
+            quality_report=report.model_dump(mode="json"),
+            completed_at=datetime.now(UTC),
+        )
+        session.add(run)
+        session.flush()
+        return run.id
+
+
+def promote_population_areas(
+    session: Session,
+    population_manifest: ImportManifest,
+    geometry_manifest: ImportManifest,
+    records: Sequence[JoinedKelurahan],
+    report: PopulationQualityReport,
+) -> int:
+    if report.join_rate < 0.95:
+        raise ImportQualityError("population join coverage must be at least 95%")
+    if report.joined_areas != len(records):
+        raise ImportQualityError("population report does not match joined areas")
+
+    with session.begin_nested():
+        geometry_source = _upsert_dataset_source(
+            session,
+            geometry_manifest,
+            provider="OpenStreetMap",
+            attribution="© OpenStreetMap contributors",
+        )
+        population_source = _upsert_dataset_source(
+            session,
+            population_manifest,
+            provider="Satu Data Jakarta / Dukcapil DKI Jakarta",
+            attribution="Satu Data Jakarta — population period 2025",
+        )
+        session.execute(
+            delete(AdministrativeArea).where(
+                AdministrativeArea.dataset_source_id == geometry_source.id
+            )
+        )
+        session.execute(
+            text(
+                """
+                INSERT INTO administrative_areas (
+                    dataset_source_id, source_record_id, official_code, name,
+                    area_type, population, population_density, observed_at,
+                    retrieved_at, original_properties, geom
+                ) VALUES (
+                    :dataset_source_id, :source_record_id, NULL, :name,
+                    'kelurahan', :population, NULL, :observed_at,
+                    :retrieved_at, CAST(:properties AS jsonb),
+                    ST_Multi(ST_SetSRID(ST_GeomFromGeoJSON(:geometry), 4326))
+                )
+                """
+            ),
+            [
+                {
+                    "dataset_source_id": geometry_source.id,
+                    "source_record_id": record.source_record_id,
+                    "name": record.name,
+                    "population": record.population,
+                    "observed_at": population_manifest.source_observed_at,
+                    "retrieved_at": population_manifest.retrieved_at,
+                    "properties": json.dumps(
+                        {
+                            **record.properties,
+                            "population_source": population_manifest.dataset_slug,
+                            "wilayah": record.wilayah,
+                            "kecamatan": record.kecamatan,
+                        }
+                    ),
+                    "geometry": json.dumps(record.geometry),
+                }
+                for record in records
+            ],
+        )
+        session.execute(
+            text(
+                """
+                UPDATE administrative_areas
+                SET population_density = population / NULLIF(
+                    ST_Area(geom::geography) / 1000000.0,
+                    0
+                )
+                WHERE dataset_source_id = :source_id
+                """
+            ),
+            {"source_id": geometry_source.id},
+        )
+        run = ImportRun(
+            dataset_source_id=population_source.id,
+            status="promoted",
+            manifest={
+                "population": population_manifest.model_dump(mode="json"),
+                "geometry": geometry_manifest.model_dump(mode="json"),
+            },
+            quality_report=report.model_dump(mode="json"),
+            completed_at=datetime.now(UTC),
+        )
+        session.add(run)
+        session.flush()
+        return run.id
+
+
+def _upsert_dataset_source(
+    session: Session,
+    manifest: ImportManifest,
+    *,
+    provider: str,
+    attribution: str,
+) -> DatasetSource:
+    source = session.scalar(
+        select(DatasetSource).where(DatasetSource.slug == manifest.dataset_slug)
+    )
+    if source is None:
+        source = DatasetSource(
+            slug=manifest.dataset_slug,
+            provider=provider,
+            source_url=str(manifest.source_url),
+            license_name=manifest.source_license,
+            attribution=attribution,
+            observed_at=manifest.source_observed_at,
+            retrieved_at=manifest.retrieved_at,
+            sha256=manifest.sha256,
+        )
+        session.add(source)
+        session.flush()
+    else:
+        source.provider = provider
+        source.source_url = str(manifest.source_url)
+        source.license_name = manifest.source_license
+        source.attribution = attribution
+        source.observed_at = manifest.source_observed_at
+        source.retrieved_at = manifest.retrieved_at
+        source.sha256 = manifest.sha256
+    return source
 
 
 def promote_dki_boundary(

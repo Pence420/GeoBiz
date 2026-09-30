@@ -9,13 +9,18 @@ from app.imports.gtfs import filter_gtfs_to_boundary, parse_gtfs_stops
 from app.imports.promotion import (
     promote_dki_boundary,
     promote_gtfs_stops,
+    promote_osm_context,
     promote_osm_records,
+    promote_population_areas,
 )
 from app.imports.staging import (
     load_staging_batch,
+    stage_osm_context,
     stage_osm_pbf,
+    stage_population_areas,
     write_staging_batch,
 )
+from app.scoring.generator import generate_normalization_profiles
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -47,6 +52,33 @@ def build_parser() -> argparse.ArgumentParser:
     gtfs.add_argument("--boundary", type=Path, required=True)
     gtfs.add_argument("--boundary-manifest", type=Path, required=True)
     gtfs.add_argument("--report", type=Path, required=True)
+
+    context = commands.add_parser(
+        "promote-osm-context", help="extract and load OSM POIs and major roads"
+    )
+    context.add_argument("raw", type=Path)
+    context.add_argument("--manifest", type=Path, required=True)
+    context.add_argument("--boundary", type=Path, required=True)
+    context.add_argument("--boundary-manifest", type=Path, required=True)
+    context.add_argument("--report", type=Path, required=True)
+
+    population = commands.add_parser(
+        "promote-population", help="join official population to kelurahan geometry"
+    )
+    population.add_argument("raw", type=Path)
+    population.add_argument("--manifest", type=Path, required=True)
+    population.add_argument("--osm-raw", type=Path, required=True)
+    population.add_argument("--geometry-manifest", type=Path, required=True)
+    population.add_argument("--boundary", type=Path, required=True)
+    population.add_argument("--boundary-manifest", type=Path, required=True)
+    population.add_argument("--aliases", type=Path, required=True)
+    population.add_argument("--report", type=Path, required=True)
+
+    profiles = commands.add_parser(
+        "generate-profiles", help="build DKI-wide versioned score profiles"
+    )
+    profiles.add_argument("--version", default="v1.0.0")
+    profiles.add_argument("--grid-size-m", type=int, default=1000)
 
     report = commands.add_parser("report", help="print a quality report")
     report.add_argument("path", type=Path)
@@ -107,6 +139,73 @@ def main() -> None:
             session.commit()
         print(quality_report.model_dump_json(indent=2))
         print(f"promoted GTFS import run {import_run_id}")
+        return
+
+    if args.command == "promote-osm-context":
+        manifest, pois, roads, quality_report = stage_osm_context(
+            args.raw,
+            args.manifest,
+            args.boundary,
+            args.boundary_manifest,
+        )
+        args.report.write_text(
+            quality_report.model_dump_json(indent=2) + "\n", encoding="utf-8"
+        )
+        with SessionLocal() as session:
+            import_run_id = promote_osm_context(
+                session, manifest, pois, roads, quality_report
+            )
+            session.commit()
+        print(quality_report.model_dump_json(indent=2))
+        print(f"promoted OSM context import run {import_run_id}")
+        return
+
+    if args.command == "promote-population":
+        population_manifest, geometry_manifest, records, quality_report = (
+            stage_population_areas(
+                args.raw,
+                args.manifest,
+                args.osm_raw,
+                args.geometry_manifest,
+                args.boundary,
+                args.boundary_manifest,
+                args.aliases,
+            )
+        )
+        args.report.write_text(
+            quality_report.model_dump_json(indent=2) + "\n", encoding="utf-8"
+        )
+        with SessionLocal() as session:
+            import_run_id = promote_population_areas(
+                session,
+                population_manifest,
+                geometry_manifest,
+                records,
+                quality_report,
+            )
+            session.commit()
+        print(quality_report.model_dump_json(indent=2))
+        print(f"promoted population import run {import_run_id}")
+        return
+
+    if args.command == "generate-profiles":
+        with SessionLocal() as session:
+            profiles = generate_normalization_profiles(
+                session,
+                version=args.version,
+                grid_size_m=args.grid_size_m,
+            )
+            summary = [
+                {
+                    "category_id": profile.category_id,
+                    "radius_m": profile.radius_m,
+                    "sample_count": profile.sample_count,
+                    "fingerprint": profile.dataset_fingerprint,
+                }
+                for profile in profiles
+            ]
+            session.commit()
+        print(json.dumps(summary, indent=2))
         return
 
     print(args.path.read_text(encoding="utf-8"), end="")

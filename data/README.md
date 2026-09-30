@@ -42,8 +42,32 @@ docker compose run --rm backend python -m app.imports.cli promote-gtfs \
   --boundary /data/raw/dki-boundary.geojson \
   --boundary-manifest /data/manifests/osm-dki-boundary-2026-09-29.json \
   --report /data/manifests/transjakarta-gtfs-2026-07-24.quality.json
+
+docker compose run --rm backend python -m app.imports.cli promote-osm-context \
+  /data/raw/jakarta.osm.pbf \
+  --manifest /data/manifests/osm-dki-context-2026-09-29.json \
+  --boundary /data/raw/dki-boundary.geojson \
+  --boundary-manifest /data/manifests/osm-dki-boundary-2026-09-29.json \
+  --report /data/manifests/osm-dki-context-2026-09-29.quality.json
+
+docker compose run --rm backend python -m app.imports.cli promote-population \
+  /data/raw/dki-population-2025.json \
+  --manifest /data/manifests/satudata-dki-population-2025.json \
+  --osm-raw /data/raw/jakarta.osm.pbf \
+  --geometry-manifest /data/manifests/osm-dki-kelurahan-2026-09-29.json \
+  --boundary /data/raw/dki-boundary.geojson \
+  --boundary-manifest /data/manifests/osm-dki-boundary-2026-09-29.json \
+  --aliases /data/crosswalks/dki_kelurahan_aliases.csv \
+  --report /data/manifests/satudata-dki-population-2025.quality.json
+
+docker compose run --rm backend python -m app.imports.cli generate-profiles \
+  --version v1.0.0 \
+  --grid-size-m 1000
 ```
 
 Promotion replaces the previous snapshot from the same dataset source inside one
 database transaction. A checksum mismatch, missing category, invalid geometry,
 duplicate source identity, or other failed quality gate aborts the whole batch.
+Normalization profiles are generated only after every source has been promoted.
+They are bound to the exact combined dataset fingerprint so stale percentiles cannot
+silently score newer data.

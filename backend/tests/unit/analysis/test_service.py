@@ -86,3 +86,40 @@ def test_missing_source_metrics_are_forwarded_as_none_not_zero() -> None:
     assert captured["raw_factors"]["population_density"] is None
     assert captured["raw_factors"]["public_transport"] is None
     assert response.score.status == "incomplete"
+
+
+def test_granular_area_uses_parent_dki_coverage_code() -> None:
+    service = AnalysisService(
+        repository=FakeRepository(
+            ContainingArea(
+                id=246,
+                name="GAMBIR",
+                official_code=None,
+                coverage_official_code="ID-JK",
+                population_density=1093.87,
+            )
+        ),
+        score_provider=lambda **kwargs: ScoreResult(
+            status="complete",
+            final_score=50.0,
+                label="Moderate",
+            raw_factors=kwargs["raw_factors"],
+            normalized_factors={key: 50.0 for key in kwargs["raw_factors"]},
+            weights={"competition": 1.0},
+            missing_factors=[],
+            scoring_version="v1.0.0",
+            profile_id=1,
+        ),
+        fingerprint_provider=lambda: "dataset-v1",
+    )
+
+    response = service.analyze(
+        AnalyzeLocationRequest(
+            longitude=106.8272,
+            latitude=-6.1754,
+            business_category="restaurant",
+        )
+    )
+
+    assert response.containing_area.name == "GAMBIR"
+    assert response.containing_area.coverage_official_code == "ID-JK"

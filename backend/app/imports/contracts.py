@@ -1,5 +1,5 @@
 from datetime import date, datetime
-from typing import Annotated
+from typing import Annotated, Any
 
 from pydantic import BaseModel, Field, HttpUrl
 
@@ -21,6 +21,7 @@ class ImportManifest(BaseModel):
     retrieved_at: datetime
     sha256: Annotated[str, Field(pattern=r"^[a-f0-9]{64}$")]
     local_filename: str
+    request_parameters: dict[str, Any] | None = None
 
 
 class ImportQualityReport(BaseModel):

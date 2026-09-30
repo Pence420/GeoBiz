@@ -1,0 +1,19 @@
+{
+  "poi_candidates": 17457,
+  "promoted_pois": 16214,
+  "road_candidates": 14380,
+  "promoted_roads": 12673,
+  "outside_poi_count": 1243,
+  "outside_road_count": 1707,
+  "duplicate_source_id_count": 0,
+  "poi_type_counts": {
+    "commercial": 6400,
+    "school": 3643,
+    "office": 3688,
+    "doctors": 158,
+    "clinic": 1587,
+    "university": 141,
+    "college": 226,
+    "hospital": 371
+  }
+}

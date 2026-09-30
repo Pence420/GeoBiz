@@ -14,20 +14,34 @@ class SpatialRepository:
         row = self.session.execute(
             text(
                 """
-                SELECT id, name, official_code, population_density::float
-                FROM administrative_areas
+                SELECT
+                    area.id,
+                    area.name,
+                    area.official_code,
+                    area.population_density::float,
+                    (
+                        SELECT coverage.official_code
+                        FROM administrative_areas AS coverage
+                        WHERE coverage.official_code = 'ID-JK'
+                          AND ST_Covers(
+                              coverage.geom,
+                              ST_SetSRID(ST_Point(:longitude, :latitude), 4326)
+                          )
+                        LIMIT 1
+                    ) AS coverage_official_code
+                FROM administrative_areas AS area
                 WHERE ST_Covers(
-                    geom,
+                    area.geom,
                     ST_SetSRID(ST_Point(:longitude, :latitude), 4326)
                 )
                 ORDER BY
-                    CASE area_type
+                    CASE area.area_type
                         WHEN 'kelurahan' THEN 1
                         WHEN 'kecamatan' THEN 2
                         WHEN 'city' THEN 3
                         ELSE 4
                     END,
-                    ST_Area(geom)
+                    ST_Area(area.geom)
                 LIMIT 1
                 """
             ),
