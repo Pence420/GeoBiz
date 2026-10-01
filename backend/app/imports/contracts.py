@@ -34,4 +34,7 @@ class ImportQualityReport(BaseModel):
     outside_coverage_count: NonNegativeInt = 0
     administrative_join_rate: Annotated[float, Field(ge=0, le=1)] | None = None
     category_counts: dict[str, NonNegativeInt]
+    subtype_counts: dict[str, NonNegativeInt] = Field(default_factory=dict)
+    ambiguous_count: NonNegativeInt = 0
+    unsupported_count: NonNegativeInt = 0
     failures: list[str]

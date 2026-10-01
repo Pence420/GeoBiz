@@ -5,18 +5,14 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from app.imports.contracts import SourceIdentity
-
-SUPPORTED_CATEGORY_TAGS: tuple[tuple[str, str, str], ...] = (
-    ("amenity", "restaurant", "restaurant"),
-    ("leisure", "fitness_centre", "gym"),
-    ("amenity", "pharmacy", "pharmacy"),
-    ("healthcare", "pharmacy", "pharmacy"),
-)
+from app.taxonomy.businesses import TAXONOMY_VERSION, classify_business
 
 
 class OsmBusinessRecord(BaseModel):
     identity: SourceIdentity
     category_slug: str
+    business_subtype: str
+    taxonomy_version: str
     name: str | None
     latitude: float = Field(ge=-90, le=90)
     longitude: float = Field(ge=-180, le=180)
@@ -24,14 +20,8 @@ class OsmBusinessRecord(BaseModel):
 
 
 def classify_osm_tags(tags: Mapping[str, str]) -> str | None:
-    matches = {
-        category
-        for key, value, category in SUPPORTED_CATEGORY_TAGS
-        if tags.get(key) == value
-    }
-    if len(matches) != 1:
-        return None
-    return matches.pop()
+    classification = classify_business(tags)
+    return classification.category_slug if classification is not None else None
 
 
 def is_exact_duplicate(left: SourceIdentity, right: SourceIdentity) -> bool:
@@ -53,8 +43,8 @@ def parse_overpass_businesses(payload: Mapping[str, Any]) -> list[OsmBusinessRec
             for key, value in tags.items()
             if isinstance(key, str) and isinstance(value, (str, int, float))
         }
-        category_slug = classify_osm_tags(string_tags)
-        if category_slug is None:
+        classification = classify_business(string_tags)
+        if classification is None:
             continue
 
         source_type = str(element.get("type", ""))
@@ -83,7 +73,9 @@ def parse_overpass_businesses(payload: Mapping[str, Any]) -> list[OsmBusinessRec
         records.append(
             OsmBusinessRecord(
                 identity=identity,
-                category_slug=category_slug,
+                category_slug=classification.category_slug,
+                business_subtype=classification.subtype,
+                taxonomy_version=TAXONOMY_VERSION,
                 name=name,
                 latitude=float(latitude),
                 longitude=float(longitude),
@@ -117,8 +109,8 @@ def parse_osmium_geojson(payload: Mapping[str, Any]) -> list[OsmBusinessRecord]:
             if not str(key).startswith("@")
             and isinstance(value, (str, int, float))
         }
-        category_slug = classify_osm_tags(tags)
-        if category_slug is None:
+        classification = classify_business(tags)
+        if classification is None:
             continue
 
         parsed_identity = _parse_osm_feature_identity(feature, properties)
@@ -134,7 +126,9 @@ def parse_osmium_geojson(payload: Mapping[str, Any]) -> list[OsmBusinessRecord]:
         records.append(
             OsmBusinessRecord(
                 identity=parsed_identity,
-                category_slug=category_slug,
+                category_slug=classification.category_slug,
+                business_subtype=classification.subtype,
+                taxonomy_version=TAXONOMY_VERSION,
                 name=name,
                 latitude=latitude,
                 longitude=longitude,

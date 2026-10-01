@@ -18,7 +18,12 @@ def valid_report(**overrides: object) -> ImportQualityReport:
         "exact_duplicate_count": 0,
         "duplicate_candidate_count": 2,
         "administrative_join_rate": 0.97,
-        "category_counts": {"restaurant": 70, "gym": 10, "pharmacy": 20},
+        "category_counts": {"fnb": 70, "retail": 10, "services": 20},
+        "subtype_counts": {
+            "restaurant": 70,
+            "supermarket": 10,
+            "fitness_centre": 20,
+        },
         "failures": [],
     }
     values.update(overrides)
@@ -34,7 +39,7 @@ def test_accepts_report_with_real_coverage_and_reported_missing_names() -> None:
     [
         ({"invalid_geometry_count": 1}, "invalid geometries"),
         ({"administrative_join_rate": 0.94}, "at least 95%"),
-        ({"category_counts": {"restaurant": 1, "gym": 0, "pharmacy": 1}}, "non-zero"),
+        ({"category_counts": {"fnb": 1, "retail": 0, "services": 1}}, "non-zero"),
     ],
 )
 def test_rejects_unfit_demo_batches(override: dict[str, object], message: str) -> None:
@@ -43,12 +48,20 @@ def test_rejects_unfit_demo_batches(override: dict[str, object], message: str) -
 
 
 def test_build_report_counts_missing_names_and_duplicate_candidates() -> None:
-    def record(record_id: str, category: str, name: str | None, longitude: float):
+    def record(
+        record_id: str,
+        category: str,
+        subtype: str,
+        name: str | None,
+        longitude: float,
+    ):
         return OsmBusinessRecord(
             identity=SourceIdentity(
                 provider="osm", source_type="node", source_record_id=record_id
             ),
             category_slug=category,
+            business_subtype=subtype,
+            taxonomy_version="v2.0.0",
             name=name,
             latitude=-6.2,
             longitude=longitude,
@@ -56,10 +69,10 @@ def test_build_report_counts_missing_names_and_duplicate_candidates() -> None:
         )
 
     records = [
-        record("1", "restaurant", "A", 106.8),
-        record("2", "restaurant", None, 106.8),
-        record("3", "gym", "B", 106.81),
-        record("4", "pharmacy", "C", 106.82),
+        record("1", "fnb", "restaurant", "A", 106.8),
+        record("2", "fnb", "restaurant", None, 106.8),
+        record("3", "retail", "supermarket", "B", 106.81),
+        record("4", "services", "fitness_centre", "C", 106.82),
     ]
 
     report = build_osm_quality_report(

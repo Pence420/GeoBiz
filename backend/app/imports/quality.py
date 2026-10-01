@@ -15,6 +15,8 @@ def build_osm_quality_report(
     total_records: int,
     outside_coverage_count: int,
     exact_duplicate_count: int = 0,
+    ambiguous_count: int = 0,
+    unsupported_count: int = 0,
 ) -> ImportQualityReport:
     coordinate_groups = Counter(
         (record.category_slug, record.longitude, record.latitude) for record in records
@@ -30,6 +32,9 @@ def build_osm_quality_report(
         outside_coverage_count=outside_coverage_count,
         administrative_join_rate=None,
         category_counts=dict(Counter(record.category_slug for record in records)),
+        subtype_counts=dict(sorted(Counter(record.business_subtype for record in records).items())),
+        ambiguous_count=ambiguous_count,
+        unsupported_count=unsupported_count,
         failures=[],
     )
 
@@ -45,7 +50,7 @@ def assert_demo_quality(report: ImportQualityReport) -> None:
     ):
         raise ImportQualityError("population join coverage must be at least 95%")
 
-    required_categories = {"restaurant", "gym", "pharmacy"}
+    required_categories = {"fnb", "retail", "services"}
     missing_categories = sorted(
         category
         for category in required_categories

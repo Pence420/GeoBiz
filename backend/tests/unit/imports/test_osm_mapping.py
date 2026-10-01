@@ -10,14 +10,13 @@ from app.imports.osm import (
 
 
 def test_maps_supported_real_business_tags() -> None:
-    assert classify_osm_tags({"amenity": "restaurant"}) == "restaurant"
-    assert classify_osm_tags({"leisure": "fitness_centre"}) == "gym"
-    assert classify_osm_tags({"amenity": "pharmacy"}) == "pharmacy"
-    assert classify_osm_tags({"healthcare": "pharmacy"}) == "pharmacy"
+    assert classify_osm_tags({"amenity": "restaurant"}) == "fnb"
+    assert classify_osm_tags({"leisure": "fitness_centre"}) == "services"
+    assert classify_osm_tags({"shop": "supermarket"}) == "retail"
 
 
 def test_rejects_unrelated_or_ambiguous_tags() -> None:
-    assert classify_osm_tags({"amenity": "cafe"}) is None
+    assert classify_osm_tags({"amenity": "pharmacy"}) is None
     assert classify_osm_tags({"leisure": "fitness_station"}) is None
     assert classify_osm_tags({"shop": "chemist"}) is None
 
@@ -64,12 +63,17 @@ def test_parses_nodes_and_way_centres_without_inventing_names() -> None:
 
     records = parse_overpass_businesses(payload)
 
-    assert [(record.category_slug, record.name) for record in records] == [
-        ("restaurant", "Warung Nyata"),
-        ("gym", None),
+    assert [
+        (record.category_slug, record.business_subtype, record.name)
+        for record in records
+    ] == [
+        ("fnb", "restaurant", "Warung Nyata"),
+        ("services", "fitness_centre", None),
+        ("fnb", "cafe", "Not a Restaurant"),
     ]
     assert records[1].identity.source_type == "way"
     assert records[1].longitude == 106.81
+    assert all(record.taxonomy_version == "v2.0.0" for record in records)
 
 
 def test_parses_osmium_geojson_points_and_polygon_centroids() -> None:
