@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { FeatureCollection } from "geojson";
 import * as maplibregl from "maplibre-gl";
-import type { GeoJSONSource, MapMouseEvent } from "maplibre-gl";
+import type { GeoJSONSource, MapLayerMouseEvent, MapMouseEvent } from "maplibre-gl";
 import workerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url";
 import "maplibre-gl/dist/maplibre-gl.css";
 
@@ -26,11 +26,17 @@ type Props = {
     population: boolean;
     transport: boolean;
     commercial: boolean;
+    education: boolean;
+    office: boolean;
+    roads: boolean;
   };
   opportunityAreas: MapLayerFeature[];
   populationAreas: MapLayerFeature[];
   transportPoints: MapLayerFeature[];
   commercialPoints: MapLayerFeature[];
+  educationPoints: MapLayerFeature[];
+  officePoints: MapLayerFeature[];
+  roads: MapLayerFeature[];
 };
 
 const categoryColors: Record<BusinessCategory, string> = {
@@ -50,14 +56,20 @@ export function GeoMap({
   populationAreas,
   transportPoints,
   commercialPoints,
+  educationPoints,
+  officePoints,
+  roads,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const [mapError, setMapError] = useState<string | null>(null);
   const [mapLoaded, setMapLoaded] = useState(false);
+  const [retryNonce, setRetryNonce] = useState(0);
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
+    setMapError(null);
+    setMapLoaded(false);
     const map = new maplibregl.Map({
       container: containerRef.current,
       style: "https://tiles.openfreemap.org/styles/liberty",
@@ -75,6 +87,7 @@ export function GeoMap({
       new maplibregl.AttributionControl({ compact: true }),
       "bottom-left",
     );
+    map.addControl(new maplibregl.FullscreenControl(), "bottom-right");
     map.on("click", (event: MapMouseEvent) =>
       selectMapLocation(map, event, onSelectLocation),
     );
@@ -102,35 +115,32 @@ export function GeoMap({
           "circle-stroke-color": "#ffffff",
         },
       });
-      map.addLayer(
-        {
-          id: "business-heatmap",
-          type: "heatmap",
-          source: "businesses",
-          maxzoom: 15,
-          paint: {
-            "heatmap-weight": 0.8,
-            "heatmap-intensity": ["interpolate", ["linear"], ["zoom"], 9, 0.6, 14, 1.8],
-            "heatmap-radius": ["interpolate", ["linear"], ["zoom"], 9, 14, 14, 28],
-            "heatmap-opacity": 0.72,
-            "heatmap-color": [
-              "interpolate",
-              ["linear"],
-              ["heatmap-density"],
-              0,
-              "rgba(49,87,232,0)",
-              0.35,
-              "#36b8e6",
-              0.65,
-              "#3157e8",
-              1,
-              "#e64646",
-            ],
-          },
-          layout: { visibility: layers.heatmap ? "visible" : "none" },
+      map.addLayer({
+        id: "business-heatmap",
+        type: "heatmap",
+        source: "businesses",
+        maxzoom: 15,
+        paint: {
+          "heatmap-weight": 0.8,
+          "heatmap-intensity": ["interpolate", ["linear"], ["zoom"], 9, 0.6, 14, 1.8],
+          "heatmap-radius": ["interpolate", ["linear"], ["zoom"], 9, 14, 14, 28],
+          "heatmap-opacity": 0.72,
+          "heatmap-color": [
+            "interpolate",
+            ["linear"],
+            ["heatmap-density"],
+            0,
+            "rgba(49,87,232,0)",
+            0.35,
+            "#36b8e6",
+            0.65,
+            "#3157e8",
+            1,
+            "#e64646",
+          ],
         },
-        "business-clusters",
-      );
+        layout: { visibility: layers.heatmap ? "visible" : "none" },
+      }, "business-clusters");
       map.addLayer({
         id: "cluster-count",
         type: "symbol",
@@ -224,6 +234,24 @@ export function GeoMap({
           "circle-stroke-color": "#ffffff",
         },
       });
+      map.addSource("education", clusteredSource());
+      addPointClusterLayers(map, "education", "#1f9d73", layers.education);
+      addPointLayer(map, "education", "#1f9d73", layers.education);
+      map.addSource("office", clusteredSource());
+      addPointClusterLayers(map, "office", "#7b61d1", layers.office);
+      addPointLayer(map, "office", "#7b61d1", layers.office);
+      map.addSource("roads", emptySource());
+      map.addLayer({
+        id: "roads-line",
+        type: "line",
+        source: "roads",
+        layout: { visibility: layers.roads ? "visible" : "none" },
+        paint: {
+          "line-color": "#d14e45",
+          "line-width": ["interpolate", ["linear"], ["zoom"], 9, 1, 16, 4],
+          "line-opacity": 0.72,
+        },
+      });
       map.addLayer({
         id: "business-points",
         type: "circle",
@@ -264,6 +292,13 @@ export function GeoMap({
         },
       });
       updateBusinesses(map, businesses, category);
+      map.on("click", "business-points", (event) => showBusinessPopup(map, event));
+      map.on("mouseenter", "business-points", () => {
+        map.getCanvas().style.cursor = "pointer";
+      });
+      map.on("mouseleave", "business-points", () => {
+        map.getCanvas().style.cursor = "";
+      });
       setMapLoaded(true);
     });
     mapRef.current = map;
@@ -271,7 +306,7 @@ export function GeoMap({
       map.remove();
       mapRef.current = null;
     };
-  }, [onSelectLocation]);
+  }, [onSelectLocation, retryNonce]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -285,6 +320,11 @@ export function GeoMap({
     (map.getSource("selection") as GeoJSONSource | undefined)?.setData(
       selectionData(selectedLocation, radius),
     );
+    map.easeTo({
+      center: [selectedLocation.longitude, selectedLocation.latitude],
+      zoom: Math.max(map.getZoom(), 12.5),
+      duration: 550,
+    });
   }, [mapLoaded, radius, selectedLocation]);
 
   useEffect(() => {
@@ -294,6 +334,9 @@ export function GeoMap({
     setSourceData(map, "opportunity", opportunityAreas);
     setSourceData(map, "transport", transportPoints);
     setSourceData(map, "commercial", commercialPoints);
+    setSourceData(map, "education", educationPoints);
+    setSourceData(map, "office", officePoints);
+    setSourceData(map, "roads", roads);
     setVisibility(map, "business-clusters", layers.competitors);
     setVisibility(map, "cluster-count", layers.competitors);
     setVisibility(map, "business-points", layers.competitors);
@@ -306,12 +349,22 @@ export function GeoMap({
     setVisibility(map, "commercial-clusters", layers.commercial);
     setVisibility(map, "commercial-cluster-count", layers.commercial);
     setVisibility(map, "commercial-points", layers.commercial);
+    setVisibility(map, "education-clusters", layers.education);
+    setVisibility(map, "education-cluster-count", layers.education);
+    setVisibility(map, "education-points", layers.education);
+    setVisibility(map, "office-clusters", layers.office);
+    setVisibility(map, "office-cluster-count", layers.office);
+    setVisibility(map, "office-points", layers.office);
+    setVisibility(map, "roads-line", layers.roads);
   }, [
     commercialPoints,
+    educationPoints,
     layers,
     mapLoaded,
+    officePoints,
     opportunityAreas,
     populationAreas,
+    roads,
     transportPoints,
   ]);
 
@@ -322,9 +375,59 @@ export function GeoMap({
         ref={containerRef}
         aria-label="Peta interaktif bisnis DKI Jakarta"
       />
-      {mapError ? <p className="map-error">Peta dasar gagal dimuat: {mapError}</p> : null}
+      <button
+        className="map-reset"
+        type="button"
+        onClick={() => mapRef.current?.easeTo({ center: [106.8272, -6.2], zoom: 10.7, duration: 650 })}
+      >
+        Reset Jakarta
+      </button>
+      {mapError ? (
+        <div className="map-error" role="alert">
+          <span>Peta dasar gagal dimuat: {mapError}</span>
+          <button type="button" onClick={() => setRetryNonce((value) => value + 1)}>Retry map</button>
+        </div>
+      ) : null}
     </div>
   );
+}
+
+function addPointLayer(
+  map: maplibregl.Map,
+  sourceId: string,
+  color: string,
+  visible: boolean,
+) {
+  map.addLayer({
+    id: `${sourceId}-points`,
+    type: "circle",
+    source: sourceId,
+    filter: ["!", ["has", "point_count"]],
+    layout: { visibility: visible ? "visible" : "none" },
+    paint: {
+      "circle-color": color,
+      "circle-radius": 4,
+      "circle-stroke-width": 1.5,
+      "circle-stroke-color": "#ffffff",
+    },
+  });
+}
+
+function showBusinessPopup(map: maplibregl.Map, event: MapLayerMouseEvent) {
+  event.originalEvent.stopPropagation();
+  const feature = event.features?.[0];
+  if (!feature || feature.geometry.type !== "Point") return;
+  const coordinates = feature.geometry.coordinates.slice() as [number, number];
+  const container = document.createElement("div");
+  container.className = "business-popup";
+  const title = document.createElement("strong");
+  title.textContent = String(feature.properties?.name || "Nama belum tersedia");
+  const category = document.createElement("span");
+  category.textContent = String(feature.properties?.category || "business");
+  const source = document.createElement("small");
+  source.textContent = `OSM ${String(feature.properties?.source_type || "record")}/${String(feature.properties?.source_record_id || "unknown")}`;
+  container.append(title, category, source);
+  new maplibregl.Popup({ offset: 12 }).setLngLat(coordinates).setDOMContent(container).addTo(map);
 }
 
 function selectMapLocation(

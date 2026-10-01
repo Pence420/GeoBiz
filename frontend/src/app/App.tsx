@@ -9,6 +9,9 @@ import {
   type CSSProperties,
 } from "react";
 
+import { AnalyticsView } from "../components/AnalyticsView";
+import { MethodologyView } from "../components/MethodologyView";
+import { SearchBox } from "../components/SearchBox";
 import {
   analyzeLocation,
   fetchAreaRankings,
@@ -17,6 +20,7 @@ import {
   fetchOpportunityMap,
   fetchPointLayer,
   fetchPopulationLayer,
+  fetchRoadLayer,
   type Analysis,
   type AreaRanking,
   type BusinessCategory,
@@ -30,7 +34,8 @@ const GeoMap = lazy(() =>
 
 const DEFAULT_LOCATION = { latitude: -6.1754, longitude: 106.8272 };
 const RADII = [500, 1000, 2000, 3000, 5000];
-type LayerKey = "opportunity" | "competitors" | "heatmap" | "population" | "transport" | "commercial";
+type LayerKey = "opportunity" | "competitors" | "heatmap" | "population" | "transport" | "commercial" | "education" | "office" | "roads";
+type ViewKey = "overview" | "analytics" | "methodology";
 
 const layerLabels: Record<LayerKey, string> = {
   opportunity: "Opportunity",
@@ -39,6 +44,9 @@ const layerLabels: Record<LayerKey, string> = {
   population: "Population",
   transport: "Transit",
   commercial: "Commercial",
+  education: "Education",
+  office: "Offices",
+  roads: "Road network",
 };
 
 const categoryLabels: Record<BusinessCategory, string> = {
@@ -67,6 +75,7 @@ const factorLabels: Record<string, string> = {
 };
 
 export function App() {
+  const [activeView, setActiveView] = useState<ViewKey>(() => viewFromHash());
   const [category, setCategory] = useState<BusinessCategory>("restaurant");
   const [radius, setRadius] = useState(1000);
   const [location, setLocation] = useState(DEFAULT_LOCATION);
@@ -82,6 +91,13 @@ export function App() {
   const [opportunityError, setOpportunityError] = useState<string | null>(null);
   const [transportPoints, setTransportPoints] = useState<MapLayerFeature[]>([]);
   const [commercialPoints, setCommercialPoints] = useState<MapLayerFeature[]>([]);
+  const [educationPoints, setEducationPoints] = useState<MapLayerFeature[]>([]);
+  const [officePoints, setOfficePoints] = useState<MapLayerFeature[]>([]);
+  const [roads, setRoads] = useState<MapLayerFeature[]>([]);
+  const [minimumScore, setMinimumScore] = useState(0);
+  const [maximumCompetition, setMaximumCompetition] = useState<number | null>(null);
+  const [minimumPopulation, setMinimumPopulation] = useState(0);
+  const [analysisRequest, setAnalysisRequest] = useState(0);
   const [layers, setLayers] = useState<Record<LayerKey, boolean>>({
     opportunity: true,
     competitors: true,
@@ -89,9 +105,18 @@ export function App() {
     population: false,
     transport: false,
     commercial: false,
+    education: false,
+    office: false,
+    roads: false,
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const syncView = () => setActiveView(viewFromHash());
+    window.addEventListener("hashchange", syncView);
+    return () => window.removeEventListener("hashchange", syncView);
+  }, []);
 
   useEffect(() => {
     fetchCategories()
@@ -134,7 +159,7 @@ export function App() {
     return () => {
       cancelled = true;
     };
-  }, [category, radius, location]);
+  }, [analysisRequest, category, radius, location]);
 
   useEffect(() => {
     let cancelled = false;
@@ -186,6 +211,30 @@ export function App() {
     }
   }, [commercialPoints.length, layers.commercial]);
 
+  useEffect(() => {
+    if (layers.education && educationPoints.length === 0) {
+      fetchPointLayer("education").then(setEducationPoints).catch(() =>
+        setError("Layer pendidikan belum bisa dimuat."),
+      );
+    }
+  }, [educationPoints.length, layers.education]);
+
+  useEffect(() => {
+    if (layers.office && officePoints.length === 0) {
+      fetchPointLayer("office").then(setOfficePoints).catch(() =>
+        setError("Layer perkantoran belum bisa dimuat."),
+      );
+    }
+  }, [layers.office, officePoints.length]);
+
+  useEffect(() => {
+    if (layers.roads && roads.length === 0) {
+      fetchRoadLayer().then(setRoads).catch(() =>
+        setError("Layer jalan belum bisa dimuat."),
+      );
+    }
+  }, [layers.roads, roads.length]);
+
   const categoryCount = useMemo(
     () =>
       categories.find((item) => item.slug === category)?.business_count ??
@@ -201,6 +250,29 @@ export function App() {
     comparedAreaIds.includes(area.area_id),
   );
 
+  const filteredOpportunityAreas = useMemo(
+    () => opportunityAreas.filter((area) => {
+      const score = area.properties.final_score ?? 0;
+      const competition = area.properties.raw_factors?.competition ?? 0;
+      const population = area.properties.raw_factors?.population_density ?? 0;
+      return score >= minimumScore
+        && (maximumCompetition == null || competition <= maximumCompetition)
+        && population >= minimumPopulation;
+    }),
+    [maximumCompetition, minimumPopulation, minimumScore, opportunityAreas],
+  );
+
+  const filteredRankings = useMemo(
+    () => rankings.filter((area) => {
+      const competition = area.raw_factors.competition ?? 0;
+      const population = area.raw_factors.population_density ?? 0;
+      return area.final_score >= minimumScore
+        && (maximumCompetition == null || competition <= maximumCompetition)
+        && population >= minimumPopulation;
+    }),
+    [maximumCompetition, minimumPopulation, minimumScore, rankings],
+  );
+
   const toggleComparison = (areaId: number) => {
     setComparedAreaIds((current) =>
       current.includes(areaId)
@@ -212,16 +284,17 @@ export function App() {
   };
 
   return (
-    <div className="app-shell">
+    <div className="app-shell" id="top">
+      <a className="skip-link" href="#main-content">Skip to main content</a>
       <header className="topbar">
         <a className="brand" href="#top" aria-label="GeoBiz home">
           <span className="brand-mark" aria-hidden="true">G</span>
           <span>GeoBiz</span>
         </a>
         <nav aria-label="Navigasi utama">
-          <a className="nav-link active" href="#overview">Overview</a>
-          <a className="nav-link" href="#locations">Locations</a>
-          <a className="nav-link" href="#methodology">Methodology</a>
+          <a className={`nav-link ${activeView === "overview" ? "active" : ""}`} href="#overview" onClick={() => setActiveView("overview")}>Map explorer</a>
+          <a className={`nav-link ${activeView === "analytics" ? "active" : ""}`} href="#analytics" onClick={() => setActiveView("analytics")}>Analytics</a>
+          <a className={`nav-link ${activeView === "methodology" ? "active" : ""}`} href="#methodology-view" onClick={() => setActiveView("methodology")}>Methodology</a>
         </nav>
         <div className="project-meta">
           <span className="status-dot" aria-hidden="true" />
@@ -229,14 +302,12 @@ export function App() {
         </div>
       </header>
 
-      <main id="top">
+      {activeView === "overview" ? <main id="main-content">
+        <h1 className="sr-only">GeoBiz DKI Jakarta Business Location Intelligence</h1>
         <section className="workspace" id="overview" aria-label="GeoBiz location analysis">
           <div className="map-column">
             <div className="map-toolbar">
-              <div className="location-readout">
-                <span className="pin-icon" aria-hidden="true">⌖</span>
-                <span><small>Lokasi analisis</small><strong>{analysis?.containing_area.name ?? "DKI Jakarta"}</strong></span>
-              </div>
+              <SearchBox onSelect={selectLocation} />
               <label className="select-control">
                 <span>Bisnis</span>
                 <select value={category} onChange={(event) => setCategory(event.target.value as BusinessCategory)}>
@@ -262,10 +333,13 @@ export function App() {
                   radius={radius}
                   onSelectLocation={selectLocation}
                   layers={layers}
-                  opportunityAreas={opportunityAreas}
+                  opportunityAreas={filteredOpportunityAreas}
                   populationAreas={populationAreas}
                   transportPoints={transportPoints}
                   commercialPoints={commercialPoints}
+                  educationPoints={educationPoints}
+                  officePoints={officePoints}
+                  roads={roads}
                 />
               </Suspense>
               <div className="layer-panel" aria-label="Map layers">
@@ -284,6 +358,13 @@ export function App() {
                   </label>
                 ))}
               </div>
+              <div className="map-filter-panel" aria-label="Opportunity filters">
+                <strong>Opportunity filters</strong>
+                <label>Minimum score<select value={minimumScore} onChange={(event) => setMinimumScore(Number(event.target.value))}>{[0, 40, 60, 80].map((value) => <option value={value} key={value}>{value === 0 ? "All scores" : `${value}+`}</option>)}</select></label>
+                <label>Competitors<select value={maximumCompetition ?? "all"} onChange={(event) => setMaximumCompetition(event.target.value === "all" ? null : Number(event.target.value))}><option value="all">Any density</option><option value="0">None</option><option value="5">At most 5</option><option value="10">At most 10</option><option value="25">At most 25</option></select></label>
+                <label>Population<select value={minimumPopulation} onChange={(event) => setMinimumPopulation(Number(event.target.value))}><option value="0">Any density</option><option value="10000">10,000+ / km²</option><option value="25000">25,000+ / km²</option><option value="40000">40,000+ / km²</option></select></label>
+                <span>{filteredOpportunityAreas.length} areas visible</span>
+              </div>
               {layers.opportunity ? (
                 <div className="opportunity-legend" aria-label="Opportunity score legend">
                   <strong>Opportunity score</strong>
@@ -295,7 +376,7 @@ export function App() {
                 </div>
               ) : null}
             </div>
-            <p className="map-hint">Klik titik mana pun di dalam DKI Jakarta untuk menghitung ulang.</p>
+            <p className="map-hint"><span>Klik titik mana pun di dalam DKI Jakarta untuk menghitung ulang.</span><strong>{analysis?.containing_area.name ?? "DKI Jakarta"} · {location.latitude.toFixed(5)}, {location.longitude.toFixed(5)}</strong></p>
 
             <section className="locations-panel opportunity-panel" id="locations">
               <div className="section-heading">
@@ -309,7 +390,7 @@ export function App() {
                   <div className="ranking-row ranking-head" role="row">
                     <span>Area</span><span>Score</span><span>Population</span><span>Competition</span><span>Access</span><span>Compare</span>
                   </div>
-                  {rankings.slice(0, 8).map((area) => {
+                  {filteredRankings.slice(0, 8).map((area) => {
                     const selected = comparedAreaIds.includes(area.area_id);
                     const disabled = !selected && comparedAreaIds.length >= 3;
                     return (
@@ -379,9 +460,9 @@ export function App() {
             <section className="score-card">
               <div className="card-title"><h2>Location score</h2><span className="live-chip">Live</span></div>
               {loading ? (
-                <div className="score-loading">Menghitung faktor spasial…</div>
+                <div className="score-loading" role="status">Menghitung faktor spasial…</div>
               ) : error ? (
-                <div className="error-state"><strong>Analisis belum tersedia</strong><p>{error}</p></div>
+                <div className="error-state" role="alert"><strong>Analisis belum tersedia</strong><p>{error}</p><button type="button" onClick={() => setAnalysisRequest((value) => value + 1)}>Retry analysis</button></div>
               ) : analysis ? (
                 <>
                   <div className="score-main">
@@ -431,11 +512,22 @@ export function App() {
               <h2>Transparent by design</h2>
               <p>Skor memakai percentile DKI yang terikat ke fingerprint dataset. Data yang hilang tidak pernah diganti nol.</p>
               <div className="fingerprint"><span>Dataset</span><code>{analysis?.dataset_fingerprint.slice(0, 12) ?? "memuat…"}</code></div>
+              <div className="fingerprint"><span>Scoring version</span><code>{analysis?.score.scoring_version ?? "memuat…"}</code></div>
+              {analysis?.limitations.map((limitation) => <p className="data-limitation" key={limitation}>{limitation}</p>)}
               <p className="limitation">Skor adalah bukti komparatif lokasi, bukan jaminan keberhasilan bisnis.</p>
             </section>
           </aside>
         </section>
-      </main>
+      </main> : null}
+      {activeView === "analytics" ? (
+        <AnalyticsView
+          category={category}
+          radius={radius}
+          onCategoryChange={setCategory}
+          onRadiusChange={setRadius}
+        />
+      ) : null}
+      {activeView === "methodology" ? <MethodologyView /> : null}
     </div>
   );
 }
@@ -443,4 +535,10 @@ export function App() {
 function formatFactor(area: AreaRanking, factor: string) {
   const score = area.normalized_factors[factor];
   return score == null ? "—" : score.toFixed(0);
+}
+
+function viewFromHash(): ViewKey {
+  if (window.location.hash === "#analytics") return "analytics";
+  if (window.location.hash === "#methodology-view") return "methodology";
+  return "overview";
 }

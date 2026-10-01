@@ -7,6 +7,8 @@ from sqlalchemy.orm import Session
 
 from app.analysis.contracts import AnalyzeLocationRequest, AnalyzeLocationResponse
 from app.analysis.service import LocationOutsideCoverageError, build_analysis_service
+from app.analytics.contracts import AnalyticsResponse, MethodologyResponse, SearchResult
+from app.analytics.service import analytics, methodology, search
 from app.areas.contracts import AreaRankingResponse
 from app.areas.service import (
     OpportunityScoresUnavailableError,
@@ -39,7 +41,8 @@ def _validate_bbox(*, west: float, south: float, east: float, north: float) -> N
         )
 
 
-@router.get("/categories", response_model=list[CategorySummary])
+@router.get("/business-categories", response_model=list[CategorySummary])
+@router.get("/categories", response_model=list[CategorySummary], include_in_schema=False)
 def list_categories(session: Annotated[Session, Depends(get_session)]):
     rows = session.execute(
         select(
@@ -232,6 +235,73 @@ def point_layer(
     )
 
 
+@router.get("/layers/roads", response_model=GeoJsonFeatureCollection)
+def road_layer(
+    session: Annotated[Session, Depends(get_session)],
+    west: Annotated[float, Query(ge=-180, le=180)] = 106.45,
+    south: Annotated[float, Query(ge=-90, le=90)] = -6.38,
+    east: Annotated[float, Query(ge=-180, le=180)] = 106.98,
+    north: Annotated[float, Query(ge=-90, le=90)] = -5.60,
+    limit: Annotated[int, Query(ge=1, le=20000)] = 10000,
+):
+    _validate_bbox(west=west, south=south, east=east, north=north)
+    rows = session.execute(
+        text(
+            """
+            SELECT id, name, road_type, source_record_id,
+                   ST_AsGeoJSON(ST_SimplifyPreserveTopology(geom, 0.00002))::json
+                       AS geometry
+            FROM roads
+            WHERE geom && ST_MakeEnvelope(:west, :south, :east, :north, 4326)
+            ORDER BY id
+            LIMIT :limit
+            """
+        ),
+        {"west": west, "south": south, "east": east, "north": north, "limit": limit},
+    ).mappings()
+    return GeoJsonFeatureCollection(
+        features=[
+            GeoJsonFeature(
+                id=row["id"],
+                geometry=row["geometry"],
+                properties={
+                    "name": row["name"],
+                    "item_type": row["road_type"],
+                    "source_record_id": row["source_record_id"],
+                },
+            )
+            for row in rows
+        ]
+    )
+
+
+@router.get("/poi", response_model=GeoJsonFeatureCollection)
+def poi_alias(
+    session: Annotated[Session, Depends(get_session)],
+    poi_type: Annotated[
+        Literal["transport", "commercial", "office", "education", "healthcare"],
+        Query(alias="type"),
+    ],
+    west: Annotated[float, Query(ge=-180, le=180)] = 106.45,
+    south: Annotated[float, Query(ge=-90, le=90)] = -6.38,
+    east: Annotated[float, Query(ge=-180, le=180)] = 106.98,
+    north: Annotated[float, Query(ge=-90, le=90)] = -5.60,
+    limit: Annotated[int, Query(ge=1, le=10000)] = 5000,
+):
+    return point_layer(session, poi_type, west, south, east, north, limit)
+
+
+@router.get("/areas", response_model=GeoJsonFeatureCollection)
+def area_alias(
+    session: Annotated[Session, Depends(get_session)],
+    west: Annotated[float, Query(ge=-180, le=180)] = 106.45,
+    south: Annotated[float, Query(ge=-90, le=90)] = -6.38,
+    east: Annotated[float, Query(ge=-180, le=180)] = 106.98,
+    north: Annotated[float, Query(ge=-90, le=90)] = -5.60,
+):
+    return population_layer(session, west, south, east, north)
+
+
 @router.get(
     "/opportunity-map",
     response_model=GeoJsonFeatureCollection,
@@ -294,8 +364,14 @@ def get_area_rankings(
 
 
 @router.post(
+    "/analyze-location",
+    response_model=AnalyzeLocationResponse,
+    responses={404: {"model": ApiError}, 409: {"model": ApiError}},
+)
+@router.post(
     "/analyze",
     response_model=AnalyzeLocationResponse,
+    include_in_schema=False,
     responses={
         404: {"model": ApiError},
         409: {"model": ApiError},
@@ -317,6 +393,49 @@ def analyze_location(
             status_code=409,
             detail={"code": "SCORING_PROFILE_UNAVAILABLE", "message": str(error)},
         ) from error
+
+
+@router.get(
+    "/analytics",
+    response_model=AnalyticsResponse,
+    responses={409: {"model": ApiError}},
+)
+def get_analytics(
+    session: Annotated[Session, Depends(get_session)],
+    business_category: Literal["restaurant", "gym", "pharmacy"] = "restaurant",
+    radius_m: int = 1000,
+):
+    if radius_m not in SUPPORTED_RADII:
+        raise HTTPException(status_code=422, detail="unsupported radius")
+    try:
+        return analytics(
+            session, category_slug=business_category, radius_m=radius_m
+        )
+    except LookupError as error:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "ANALYTICS_UNAVAILABLE", "message": str(error)},
+        ) from error
+
+
+@router.get("/methodology", response_model=MethodologyResponse)
+def get_methodology(session: Annotated[Session, Depends(get_session)]):
+    return methodology(session)
+
+
+@router.get("/search", response_model=list[SearchResult])
+def search_locations(
+    session: Annotated[Session, Depends(get_session)],
+    q: Annotated[str, Query(min_length=2, max_length=100)],
+    limit: Annotated[int, Query(ge=1, le=20)] = 8,
+):
+    return search(session, query=q, limit=limit)
+
+
+@router.get("/datasets", response_model=list[DatasetSummary])
+def datasets(session: Annotated[Session, Depends(get_session)]):
+    rows = session.scalars(select(DatasetSource).order_by(DatasetSource.slug)).all()
+    return [DatasetSummary.model_validate(row, from_attributes=True) for row in rows]
 
 
 @router.get("/metadata", response_model=MetadataResponse)

@@ -1,4 +1,4 @@
-.PHONY: up down logs migrate test test-backend test-frontend lint
+.PHONY: up down logs migrate profiles opportunities test test-backend test-frontend build-frontend lint
 
 up:
 	docker compose up -d --build
@@ -12,15 +12,23 @@ logs:
 migrate:
 	docker compose run --rm backend alembic upgrade head
 
+profiles:
+	docker compose run --rm backend python -m app.imports.cli generate-profiles --version v1.0.0 --grid-size-m 1000
+
+opportunities:
+	docker compose run --rm backend python -m app.imports.cli generate-opportunities --version v1.0.0
+
 test: test-backend test-frontend
 
 test-backend:
-	cd backend && .venv/bin/python -m pytest -v
+	docker compose run --rm backend pytest -q
 
 test-frontend:
-	cd frontend && npm test -- --run
+	docker compose run --rm frontend npm test -- --run
+
+build-frontend:
+	docker compose run --rm frontend npm run build
 
 lint:
-	cd backend && .venv/bin/python -m compileall -q app tests
-	cd frontend && npm run lint
-
+	docker compose run --rm backend python -m compileall -q app tests
+	docker compose run --rm frontend npm run lint

@@ -37,6 +37,7 @@ def opportunity_map(
                     score.final_score,
                     score.label,
                     score.normalized_factors,
+                    score.raw_factors,
                     score.representative_method,
                     row_number() OVER (
                         ORDER BY score.final_score DESC, area.name, area.id
@@ -58,6 +59,7 @@ def opportunity_map(
                 ranked.final_score::float AS final_score,
                 ranked.label,
                 ranked.normalized_factors,
+                ranked.raw_factors,
                 ranked.representative_method,
                 ST_X(ST_PointOnSurface(ranked.geom)) AS longitude,
                 ST_Y(ST_PointOnSurface(ranked.geom)) AS latitude,
@@ -100,6 +102,7 @@ def opportunity_map(
                     "final_score": row["final_score"],
                     "label": row["label"],
                     "normalized_factors": row["normalized_factors"],
+                    "raw_factors": row["raw_factors"],
                     "representative_method": row["representative_method"],
                     "longitude": row["longitude"],
                     "latitude": row["latitude"],

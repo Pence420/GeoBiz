@@ -14,7 +14,7 @@ beforeEach(() => {
     "fetch",
     vi.fn(async (input: string | URL | Request) => {
       const url = String(input);
-      if (url.includes("/categories")) {
+      if (url.includes("/business-categories")) {
         return Response.json([
           { slug: "restaurant", name: "Restaurant", business_count: 1826 },
         ]);
@@ -66,9 +66,13 @@ beforeEach(() => {
           final_score: 51.2,
           label: "Moderate",
           normalized_factors: { competition: 4.7, office_activity: 100 },
+          raw_factors: { competition: 26, office_activity: 93 },
           weights: { competition: 0.2, office_activity: 0.2 },
+          missing_factors: [],
+          scoring_version: "v1.0.0",
         },
         dataset_fingerprint: "1262b5d3ef6e4ca35d7710f57a6b3298",
+        limitations: [],
       });
     }),
   );
@@ -100,7 +104,7 @@ describe("App", () => {
   it("ignores a stale ranking response after radius changes", async () => {
     vi.mocked(fetch).mockImplementation(async (input: string | URL | Request) => {
       const url = String(input);
-      if (url.includes("/categories")) {
+      if (url.includes("/business-categories")) {
         return Response.json([{ slug: "restaurant", business_count: 1826 }]);
       }
       if (url.includes("/businesses")) {
@@ -148,9 +152,13 @@ describe("App", () => {
           final_score: 50,
           label: "Moderate",
           normalized_factors: {},
+          raw_factors: {},
           weights: {},
+          missing_factors: [],
+          scoring_version: "v1.0.0",
         },
         dataset_fingerprint: "fingerprint",
+        limitations: [],
       });
     });
     render(<App />);

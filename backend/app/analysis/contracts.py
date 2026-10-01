@@ -1,6 +1,6 @@
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import AliasChoices, BaseModel, Field
 
 from app.scoring.domain import ScoreResult
 
@@ -9,7 +9,10 @@ class AnalyzeLocationRequest(BaseModel):
     latitude: Annotated[float, Field(ge=-90, le=90)]
     longitude: Annotated[float, Field(ge=-180, le=180)]
     business_category: Literal["restaurant", "gym", "pharmacy"]
-    radius_m: Literal[500, 1000, 2000, 3000, 5000] = 1000
+    radius_m: Literal[500, 1000, 2000, 3000, 5000] = Field(
+        default=1000,
+        validation_alias=AliasChoices("radius_m", "radius"),
+    )
 
 
 class ContainingArea(BaseModel):
