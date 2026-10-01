@@ -20,5 +20,6 @@ def db_session() -> Generator[Session, None, None]:
         with Session(bind=connection) as session:
             yield session
             session.close()
-        transaction.rollback()
+        if transaction.is_active:
+            transaction.rollback()
     engine.dispose()

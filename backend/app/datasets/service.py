@@ -1,11 +1,10 @@
-import hashlib
 from datetime import date, datetime
 
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.db.models import DatasetSource
+from app.db.models import DataRelease, DataReleaseSource, DatasetSource
 
 
 class DatasetSnapshot(BaseModel):
@@ -19,18 +18,34 @@ class DatasetSnapshot(BaseModel):
     sha256: str
 
 
+def active_release(session: Session) -> DataRelease:
+    release = session.scalar(
+        select(DataRelease).where(DataRelease.status == "active")
+    )
+    if release is None:
+        raise LookupError("no active data release is available")
+    return release
+
+
+def active_release_id(session: Session) -> int:
+    return active_release(session).id
+
+
 def current_dataset_fingerprint(session: Session) -> str:
-    rows = session.execute(
-        select(DatasetSource.slug, DatasetSource.sha256).order_by(DatasetSource.slug)
-    ).all()
-    if not rows:
-        raise LookupError("no promoted datasets are available")
-    material = "\n".join(f"{slug}:{checksum}" for slug, checksum in rows)
-    return hashlib.sha256(material.encode("utf-8")).hexdigest()
+    return active_release(session).dataset_fingerprint
 
 
 def list_dataset_snapshots(session: Session) -> list[DatasetSnapshot]:
-    sources = session.scalars(select(DatasetSource).order_by(DatasetSource.slug)).all()
+    release_id = active_release_id(session)
+    sources = session.scalars(
+        select(DatasetSource)
+        .join(
+            DataReleaseSource,
+            DataReleaseSource.dataset_source_id == DatasetSource.id,
+        )
+        .where(DataReleaseSource.data_release_id == release_id)
+        .order_by(DatasetSource.slug)
+    ).all()
     return [
         DatasetSnapshot(
             slug=source.slug,
