@@ -20,8 +20,37 @@ export type MapLayerFeature = Feature<
     population_density?: number | null;
     item_type?: string;
     source_record_id?: string;
+    area_id?: number;
+    rank?: number;
+    final_score?: number;
+    label?: string;
+    normalized_factors?: Record<string, number | null>;
+    representative_method?: "point_on_surface";
+    longitude?: number;
+    latitude?: number;
   }
 > & { id: number };
+
+export type AreaRanking = {
+  area_id: number;
+  area_name: string;
+  rank: number;
+  final_score: number;
+  label: string;
+  longitude: number;
+  latitude: number;
+  normalized_factors: Record<string, number | null>;
+  raw_factors: Record<string, number | null>;
+  representative_method: "point_on_surface";
+};
+
+export type AreaRankingResponse = {
+  business_category: BusinessCategory;
+  radius_m: number;
+  scoring_version: string;
+  dataset_fingerprint: string;
+  items: AreaRanking[];
+};
 
 export type Analysis = {
   containing_area: { name: string; population_density: number | null };
@@ -83,6 +112,26 @@ export async function fetchPointLayer(
     `/layers/points?layer=${layer}&limit=10000`,
   );
   return payload.features;
+}
+
+export async function fetchOpportunityMap(
+  category: BusinessCategory,
+  radius: number,
+) {
+  const payload = await request<{ features: MapLayerFeature[] }>(
+    `/opportunity-map?business_category=${category}&radius_m=${radius}`,
+  );
+  return payload.features;
+}
+
+export function fetchAreaRankings(
+  category: BusinessCategory,
+  radius: number,
+  limit = 10,
+) {
+  return request<AreaRankingResponse>(
+    `/area-rankings?business_category=${category}&radius_m=${radius}&limit=${limit}`,
+  );
 }
 
 export function analyzeLocation(input: {

@@ -271,3 +271,66 @@ class NormalizationProfile(TimestampMixin, Base):
     percentiles: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
     sample_count: Mapped[int] = mapped_column(BigInteger, nullable=False)
 
+
+class OpportunityScore(Base):
+    __tablename__ = "opportunity_scores"
+    __table_args__ = (
+        UniqueConstraint(
+            "administrative_area_id",
+            "category_id",
+            "radius_m",
+            "dataset_fingerprint",
+            "scoring_version",
+            name="uq_opportunity_scores_scope",
+        ),
+        CheckConstraint(
+            "radius_m IN (500, 1000, 2000, 3000, 5000)",
+            name="ck_opportunity_scores_radius",
+        ),
+        CheckConstraint(
+            "final_score >= 0 AND final_score <= 100",
+            name="ck_opportunity_scores_range",
+        ),
+        CheckConstraint(
+            "label IN ('Very Low', 'Low', 'Moderate', 'Good', 'High')",
+            name="ck_opportunity_scores_label",
+        ),
+        CheckConstraint(
+            "representative_method = 'point_on_surface'",
+            name="ck_opportunity_scores_representative_method",
+        ),
+        Index("ix_opportunity_scores_administrative_area_id", "administrative_area_id"),
+        Index("ix_opportunity_scores_category_id", "category_id"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
+    administrative_area_id: Mapped[int] = mapped_column(
+        ForeignKey("administrative_areas.id", ondelete="CASCADE"), nullable=False
+    )
+    category_id: Mapped[int] = mapped_column(
+        ForeignKey("business_categories.id", ondelete="CASCADE"), nullable=False
+    )
+    radius_m: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    dataset_fingerprint: Mapped[str] = mapped_column(Text, nullable=False)
+    scoring_version: Mapped[str] = mapped_column(Text, nullable=False)
+    final_score: Mapped[Decimal] = mapped_column(Numeric(5, 1), nullable=False)
+    label: Mapped[str] = mapped_column(Text, nullable=False)
+    raw_factors: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    normalized_factors: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    representative_method: Mapped[str] = mapped_column(
+        Text, server_default="point_on_surface", nullable=False
+    )
+    generated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+Index(
+    "ix_opportunity_scores_lookup",
+    OpportunityScore.category_id,
+    OpportunityScore.radius_m,
+    OpportunityScore.dataset_fingerprint,
+    OpportunityScore.scoring_version,
+    OpportunityScore.final_score.desc(),
+    postgresql_include=["administrative_area_id", "label"],
+)

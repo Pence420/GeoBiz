@@ -77,3 +77,45 @@ def test_v1_scoring_weights_sum_to_one_per_category(db_session: Session) -> None
 
     assert [slug for slug, _ in rows] == ["gym", "pharmacy", "restaurant"]
     assert all(total == pytest.approx(1.0) for _, total in rows)
+
+
+def test_opportunity_scores_have_scope_constraints_and_lookup_index(
+    db_session: Session,
+) -> None:
+    columns = {
+        row[0]
+        for row in db_session.execute(
+            text(
+                """
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_schema = 'public'
+                  AND table_name = 'opportunity_scores'
+                """
+            )
+        )
+    }
+    indexes = {
+        row[0]
+        for row in db_session.execute(
+            text(
+                """
+                SELECT indexname
+                FROM pg_indexes
+                WHERE schemaname = 'public'
+                  AND tablename = 'opportunity_scores'
+                """
+            )
+        )
+    }
+
+    assert {
+        "administrative_area_id",
+        "category_id",
+        "radius_m",
+        "dataset_fingerprint",
+        "scoring_version",
+        "final_score",
+        "normalized_factors",
+    } <= columns
+    assert "ix_opportunity_scores_lookup" in indexes

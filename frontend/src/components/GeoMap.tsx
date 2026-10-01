@@ -20,12 +20,14 @@ type Props = {
   radius: number;
   onSelectLocation: (longitude: number, latitude: number) => void;
   layers: {
+    opportunity: boolean;
     competitors: boolean;
     heatmap: boolean;
     population: boolean;
     transport: boolean;
     commercial: boolean;
   };
+  opportunityAreas: MapLayerFeature[];
   populationAreas: MapLayerFeature[];
   transportPoints: MapLayerFeature[];
   commercialPoints: MapLayerFeature[];
@@ -44,6 +46,7 @@ export function GeoMap({
   radius,
   onSelectLocation,
   layers,
+  opportunityAreas,
   populationAreas,
   transportPoints,
   commercialPoints,
@@ -73,7 +76,7 @@ export function GeoMap({
       "bottom-left",
     );
     map.on("click", (event: MapMouseEvent) =>
-      onSelectLocation(event.lngLat.lng, event.lngLat.lat),
+      selectMapLocation(map, event, onSelectLocation),
     );
     map.on("error", (event) => {
       const message = event.error?.message;
@@ -140,6 +143,33 @@ export function GeoMap({
         paint: { "text-color": "#ffffff" },
       });
       map.addSource("population", emptySource());
+      map.addSource("opportunity", emptySource());
+      map.addLayer(
+        {
+          id: "opportunity-fill",
+          type: "fill",
+          source: "opportunity",
+          layout: { visibility: layers.opportunity ? "visible" : "none" },
+          paint: {
+            "fill-color": [
+              "step",
+              ["coalesce", ["get", "final_score"], 0],
+              "#eceef2",
+              20,
+              "#dbe5f2",
+              40,
+              "#9fbaf5",
+              60,
+              "#4772e8",
+              80,
+              "#183bb8",
+            ],
+            "fill-opacity": 0.58,
+            "fill-outline-color": "rgba(20,45,120,0.4)",
+          },
+        },
+        "business-heatmap",
+      );
       map.addLayer(
         {
           id: "population-fill",
@@ -261,6 +291,7 @@ export function GeoMap({
     const map = mapRef.current;
     if (!mapLoaded || !map?.isStyleLoaded()) return;
     setSourceData(map, "population", populationAreas);
+    setSourceData(map, "opportunity", opportunityAreas);
     setSourceData(map, "transport", transportPoints);
     setSourceData(map, "commercial", commercialPoints);
     setVisibility(map, "business-clusters", layers.competitors);
@@ -268,6 +299,7 @@ export function GeoMap({
     setVisibility(map, "business-points", layers.competitors);
     setVisibility(map, "business-heatmap", layers.heatmap);
     setVisibility(map, "population-fill", layers.population);
+    setVisibility(map, "opportunity-fill", layers.opportunity);
     setVisibility(map, "transport-clusters", layers.transport);
     setVisibility(map, "transport-cluster-count", layers.transport);
     setVisibility(map, "transport-points", layers.transport);
@@ -278,6 +310,7 @@ export function GeoMap({
     commercialPoints,
     layers,
     mapLoaded,
+    opportunityAreas,
     populationAreas,
     transportPoints,
   ]);
@@ -292,6 +325,23 @@ export function GeoMap({
       {mapError ? <p className="map-error">Peta dasar gagal dimuat: {mapError}</p> : null}
     </div>
   );
+}
+
+function selectMapLocation(
+  map: maplibregl.Map,
+  event: MapMouseEvent,
+  onSelectLocation: (longitude: number, latitude: number) => void,
+) {
+  const opportunity = map.getLayer("opportunity-fill")
+    ? map.queryRenderedFeatures(event.point, { layers: ["opportunity-fill"] })[0]
+    : undefined;
+  const longitude = Number(opportunity?.properties?.longitude);
+  const latitude = Number(opportunity?.properties?.latitude);
+  if (Number.isFinite(longitude) && Number.isFinite(latitude)) {
+    onSelectLocation(longitude, latitude);
+    return;
+  }
+  onSelectLocation(event.lngLat.lng, event.lngLat.lat);
 }
 
 function emptySource(): maplibregl.GeoJSONSourceSpecification {

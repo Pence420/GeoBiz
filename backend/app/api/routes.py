@@ -7,6 +7,12 @@ from sqlalchemy.orm import Session
 
 from app.analysis.contracts import AnalyzeLocationRequest, AnalyzeLocationResponse
 from app.analysis.service import LocationOutsideCoverageError, build_analysis_service
+from app.areas.contracts import AreaRankingResponse
+from app.areas.service import (
+    OpportunityScoresUnavailableError,
+    area_rankings,
+    opportunity_map,
+)
 from app.api.contracts import (
     ApiError,
     CategorySummary,
@@ -21,6 +27,8 @@ from app.db.session import get_session
 from app.scoring.service import ScoringProfileUnavailableError
 
 router = APIRouter(prefix="/api")
+
+SUPPORTED_RADII = (500, 1000, 2000, 3000, 5000)
 
 
 def _validate_bbox(*, west: float, south: float, east: float, north: float) -> None:
@@ -52,10 +60,10 @@ def list_categories(session: Annotated[Session, Depends(get_session)]):
 def list_businesses(
     session: Annotated[Session, Depends(get_session)],
     category: Literal["restaurant", "gym", "pharmacy"] | None = None,
-    west: Annotated[float, Query(ge=-180, le=180)] = 106.68,
+    west: Annotated[float, Query(ge=-180, le=180)] = 106.45,
     south: Annotated[float, Query(ge=-90, le=90)] = -6.38,
     east: Annotated[float, Query(ge=-180, le=180)] = 106.98,
-    north: Annotated[float, Query(ge=-90, le=90)] = -6.08,
+    north: Annotated[float, Query(ge=-90, le=90)] = -5.60,
     limit: Annotated[int, Query(ge=1, le=5000)] = 3000,
 ):
     _validate_bbox(west=west, south=south, east=east, north=north)
@@ -114,10 +122,10 @@ def list_businesses(
 @router.get("/layers/population", response_model=GeoJsonFeatureCollection)
 def population_layer(
     session: Annotated[Session, Depends(get_session)],
-    west: Annotated[float, Query(ge=-180, le=180)] = 106.68,
+    west: Annotated[float, Query(ge=-180, le=180)] = 106.45,
     south: Annotated[float, Query(ge=-90, le=90)] = -6.38,
     east: Annotated[float, Query(ge=-180, le=180)] = 106.98,
-    north: Annotated[float, Query(ge=-90, le=90)] = -6.08,
+    north: Annotated[float, Query(ge=-90, le=90)] = -5.60,
 ):
     _validate_bbox(west=west, south=south, east=east, north=north)
     rows = session.execute(
@@ -163,10 +171,10 @@ def point_layer(
     layer: Literal[
         "transport", "commercial", "office", "education", "healthcare"
     ],
-    west: Annotated[float, Query(ge=-180, le=180)] = 106.68,
+    west: Annotated[float, Query(ge=-180, le=180)] = 106.45,
     south: Annotated[float, Query(ge=-90, le=90)] = -6.38,
     east: Annotated[float, Query(ge=-180, le=180)] = 106.98,
-    north: Annotated[float, Query(ge=-90, le=90)] = -6.08,
+    north: Annotated[float, Query(ge=-90, le=90)] = -5.60,
     limit: Annotated[int, Query(ge=1, le=10000)] = 5000,
 ):
     _validate_bbox(west=west, south=south, east=east, north=north)
@@ -222,6 +230,67 @@ def point_layer(
             for row in rows
         ],
     )
+
+
+@router.get(
+    "/opportunity-map",
+    response_model=GeoJsonFeatureCollection,
+    responses={409: {"model": ApiError}},
+)
+def get_opportunity_map(
+    session: Annotated[Session, Depends(get_session)],
+    business_category: Literal["restaurant", "gym", "pharmacy"],
+    radius_m: Annotated[int, Query()] = 1000,
+    west: Annotated[float, Query(ge=-180, le=180)] = 106.45,
+    south: Annotated[float, Query(ge=-90, le=90)] = -6.38,
+    east: Annotated[float, Query(ge=-180, le=180)] = 106.98,
+    north: Annotated[float, Query(ge=-90, le=90)] = -5.60,
+):
+    _validate_bbox(west=west, south=south, east=east, north=north)
+    if radius_m not in SUPPORTED_RADII:
+        raise HTTPException(status_code=422, detail="unsupported radius")
+    try:
+        return opportunity_map(
+            session,
+            category_slug=business_category,
+            radius_m=radius_m,
+            west=west,
+            south=south,
+            east=east,
+            north=north,
+        )
+    except OpportunityScoresUnavailableError as error:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "OPPORTUNITY_SCORES_UNAVAILABLE", "message": str(error)},
+        ) from error
+
+
+@router.get(
+    "/area-rankings",
+    response_model=AreaRankingResponse,
+    responses={409: {"model": ApiError}},
+)
+def get_area_rankings(
+    session: Annotated[Session, Depends(get_session)],
+    business_category: Literal["restaurant", "gym", "pharmacy"],
+    radius_m: Annotated[int, Query()] = 1000,
+    limit: Annotated[int, Query(ge=1, le=267)] = 10,
+):
+    if radius_m not in SUPPORTED_RADII:
+        raise HTTPException(status_code=422, detail="unsupported radius")
+    try:
+        return area_rankings(
+            session,
+            category_slug=business_category,
+            radius_m=radius_m,
+            limit=limit,
+        )
+    except OpportunityScoresUnavailableError as error:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "OPPORTUNITY_SCORES_UNAVAILABLE", "message": str(error)},
+        ) from error
 
 
 @router.post(

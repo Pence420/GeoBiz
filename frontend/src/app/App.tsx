@@ -1,12 +1,24 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import {
+  Fragment,
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type CSSProperties,
+} from "react";
 
 import {
   analyzeLocation,
+  fetchAreaRankings,
   fetchBusinesses,
   fetchCategories,
+  fetchOpportunityMap,
   fetchPointLayer,
   fetchPopulationLayer,
   type Analysis,
+  type AreaRanking,
   type BusinessCategory,
   type BusinessFeature,
   type MapLayerFeature,
@@ -18,9 +30,10 @@ const GeoMap = lazy(() =>
 
 const DEFAULT_LOCATION = { latitude: -6.1754, longitude: 106.8272 };
 const RADII = [500, 1000, 2000, 3000, 5000];
-type LayerKey = "competitors" | "heatmap" | "population" | "transport" | "commercial";
+type LayerKey = "opportunity" | "competitors" | "heatmap" | "population" | "transport" | "commercial";
 
 const layerLabels: Record<LayerKey, string> = {
+  opportunity: "Opportunity",
   competitors: "Competitors",
   heatmap: "Heatmap",
   population: "Population",
@@ -63,9 +76,14 @@ export function App() {
   const [businesses, setBusinesses] = useState<BusinessFeature[]>([]);
   const [analysis, setAnalysis] = useState<Analysis | null>(null);
   const [populationAreas, setPopulationAreas] = useState<MapLayerFeature[]>([]);
+  const [opportunityAreas, setOpportunityAreas] = useState<MapLayerFeature[]>([]);
+  const [rankings, setRankings] = useState<AreaRanking[]>([]);
+  const [comparedAreaIds, setComparedAreaIds] = useState<number[]>([]);
+  const [opportunityError, setOpportunityError] = useState<string | null>(null);
   const [transportPoints, setTransportPoints] = useState<MapLayerFeature[]>([]);
   const [commercialPoints, setCommercialPoints] = useState<MapLayerFeature[]>([]);
   const [layers, setLayers] = useState<Record<LayerKey, boolean>>({
+    opportunity: true,
     competitors: true,
     heatmap: false,
     population: false,
@@ -82,22 +100,67 @@ export function App() {
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
+    setBusinesses([]);
+    fetchBusinesses(category)
+      .then((features) => {
+        if (!cancelled) setBusinesses(features);
+      })
+      .catch(() => {
+        if (!cancelled) setBusinesses([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [category]);
+
+  useEffect(() => {
+    let cancelled = false;
     setLoading(true);
     setError(null);
-    Promise.all([
-      fetchBusinesses(category),
-      analyzeLocation({ ...location, category, radius }),
-    ])
-      .then(([features, result]) => {
-        setBusinesses(features);
+    analyzeLocation({ ...location, category, radius })
+      .then((result) => {
+        if (cancelled) return;
         setAnalysis(result);
       })
       .catch((requestError: Error) => {
+        if (cancelled) return;
         setAnalysis(null);
         setError(requestError.message || "Analisis lokasi gagal dimuat.");
       })
-      .finally(() => setLoading(false));
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [category, radius, location]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setOpportunityError(null);
+    setOpportunityAreas([]);
+    setRankings([]);
+    setComparedAreaIds([]);
+    Promise.all([
+      fetchOpportunityMap(category, radius),
+      fetchAreaRankings(category, radius),
+    ])
+      .then(([features, response]) => {
+        if (cancelled) return;
+        setOpportunityAreas(features);
+        setRankings(response.items);
+      })
+      .catch((requestError: Error) => {
+        if (cancelled) return;
+        setOpportunityAreas([]);
+        setRankings([]);
+        setOpportunityError(requestError.message || "Ranking area belum tersedia.");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [category, radius]);
 
   useEffect(() => {
     if (layers.population && populationAreas.length === 0) {
@@ -133,6 +196,20 @@ export function App() {
   const selectLocation = useCallback((longitude: number, latitude: number) => {
     setLocation({ longitude, latitude });
   }, []);
+
+  const comparedAreas = rankings.filter((area) =>
+    comparedAreaIds.includes(area.area_id),
+  );
+
+  const toggleComparison = (areaId: number) => {
+    setComparedAreaIds((current) =>
+      current.includes(areaId)
+        ? current.filter((id) => id !== areaId)
+        : current.length < 3
+          ? [...current, areaId]
+          : current,
+    );
+  };
 
   return (
     <div className="app-shell">
@@ -185,6 +262,7 @@ export function App() {
                   radius={radius}
                   onSelectLocation={selectLocation}
                   layers={layers}
+                  opportunityAreas={opportunityAreas}
                   populationAreas={populationAreas}
                   transportPoints={transportPoints}
                   commercialPoints={commercialPoints}
@@ -206,10 +284,78 @@ export function App() {
                   </label>
                 ))}
               </div>
+              {layers.opportunity ? (
+                <div className="opportunity-legend" aria-label="Opportunity score legend">
+                  <strong>Opportunity score</strong>
+                  <div><i className="band very-low" /><span>0–20</span></div>
+                  <div><i className="band low" /><span>21–40</span></div>
+                  <div><i className="band moderate" /><span>41–60</span></div>
+                  <div><i className="band good" /><span>61–80</span></div>
+                  <div><i className="band high" /><span>81–100</span></div>
+                </div>
+              ) : null}
             </div>
             <p className="map-hint">Klik titik mana pun di dalam DKI Jakarta untuk menghitung ulang.</p>
 
-            <section className="locations-panel" id="locations">
+            <section className="locations-panel opportunity-panel" id="locations">
+              <div className="section-heading">
+                <div><h2>Top opportunity areas</h2><p>Skor titik representatif di dalam kelurahan, bukan nilai seragam seluruh polygon.</p></div>
+                <span className="count-badge">{categoryLabels[category]} · {radius / 1000} km</span>
+              </div>
+              {opportunityError ? (
+                <div className="panel-empty"><strong>Ranking belum tersedia</strong><span>{opportunityError}</span></div>
+              ) : (
+                <div className="ranking-table" role="table" aria-label="Peringkat opportunity kelurahan">
+                  <div className="ranking-row ranking-head" role="row">
+                    <span>Area</span><span>Score</span><span>Population</span><span>Competition</span><span>Access</span><span>Compare</span>
+                  </div>
+                  {rankings.slice(0, 8).map((area) => {
+                    const selected = comparedAreaIds.includes(area.area_id);
+                    const disabled = !selected && comparedAreaIds.length >= 3;
+                    return (
+                      <div className="ranking-row" role="row" key={area.area_id}>
+                        <button className="area-link" type="button" onClick={() => selectLocation(area.longitude, area.latitude)}>
+                          <b>{area.rank}</b><span>{area.area_name}<small>Analyze representative point</small></span>
+                        </button>
+                        <span className="ranking-score"><strong>{area.final_score.toFixed(1)}</strong><small>{area.label}</small></span>
+                        <span>{formatFactor(area, "population_density")}</span>
+                        <span>{formatFactor(area, "competition")}</span>
+                        <span>{formatFactor(area, "road_accessibility")}</span>
+                        <label className="compare-control">
+                          <input
+                            type="checkbox"
+                            checked={selected}
+                            disabled={disabled}
+                            aria-label={`Compare ${area.area_name}`}
+                            onChange={() => toggleComparison(area.area_id)}
+                          />
+                          <span>{selected ? "Pinned" : "Pin"}</span>
+                        </label>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+              {comparedAreas.length > 0 ? (
+                <div className="comparison" aria-label="Area comparison">
+                  <div className="comparison-title"><strong>Area comparison</strong><span>{comparedAreas.length}/3 pinned</span></div>
+                  <div className="comparison-grid" style={{ "--area-count": comparedAreas.length } as CSSProperties}>
+                    <span className="comparison-label">Area</span>
+                    {comparedAreas.map((area) => <strong key={area.area_id}>{area.area_name}</strong>)}
+                    <span className="comparison-label">Final score</span>
+                    {comparedAreas.map((area) => <span key={area.area_id}>{area.final_score.toFixed(1)}</span>)}
+                    {Object.entries(factorLabels).map(([factor, label]) => (
+                      <Fragment key={factor}>
+                        <span className="comparison-label">{label}</span>
+                        {comparedAreas.map((area) => <span key={area.area_id}>{formatFactor(area, factor)}</span>)}
+                      </Fragment>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+            </section>
+
+            <section className="locations-panel">
               <div className="section-heading">
                 <div><h2>Bisnis nyata di DKI Jakarta</h2><p>Sumber OpenStreetMap, tanpa data buatan.</p></div>
                 <span className="count-badge">{categoryCount.toLocaleString("id-ID")} lokasi</span>
@@ -292,4 +438,9 @@ export function App() {
       </main>
     </div>
   );
+}
+
+function formatFactor(area: AreaRanking, factor: string) {
+  const score = area.normalized_factors[factor];
+  return score == null ? "—" : score.toFixed(0);
 }

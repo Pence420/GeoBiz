@@ -63,6 +63,9 @@ docker compose run --rm backend python -m app.imports.cli promote-population \
 docker compose run --rm backend python -m app.imports.cli generate-profiles \
   --version v1.0.0 \
   --grid-size-m 1000
+
+docker compose run --rm backend python -m app.imports.cli generate-opportunities \
+  --version v1.0.0
 ```
 
 Promotion replaces the previous snapshot from the same dataset source inside one
@@ -70,4 +73,7 @@ database transaction. A checksum mismatch, missing category, invalid geometry,
 duplicate source identity, or other failed quality gate aborts the whole batch.
 Normalization profiles are generated only after every source has been promoted.
 They are bound to the exact combined dataset fingerprint so stale percentiles cannot
-silently score newer data.
+silently score newer data. Opportunity scores are then generated for all 267
+kelurahan, all three categories, and all five supported radii. Each score uses an
+in-polygon representative point (`ST_PointOnSurface`) and retains its raw and
+normalized factors; it does not claim that one score is uniform across the polygon.

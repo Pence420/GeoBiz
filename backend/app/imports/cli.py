@@ -21,6 +21,7 @@ from app.imports.staging import (
     write_staging_batch,
 )
 from app.scoring.generator import generate_normalization_profiles
+from app.areas.generator import generate_opportunity_scores
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -79,6 +80,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     profiles.add_argument("--version", default="v1.0.0")
     profiles.add_argument("--grid-size-m", type=int, default=1000)
+
+    opportunities = commands.add_parser(
+        "generate-opportunities",
+        help="cache versioned point-on-surface scores for every kelurahan",
+    )
+    opportunities.add_argument("--version", default="v1.0.0")
 
     report = commands.add_parser("report", help="print a quality report")
     report.add_argument("path", type=Path)
@@ -204,6 +211,20 @@ def main() -> None:
                 }
                 for profile in profiles
             ]
+            session.commit()
+        print(json.dumps(summary, indent=2))
+        return
+
+    if args.command == "generate-opportunities":
+        with SessionLocal() as session:
+            scores = generate_opportunity_scores(session, version=args.version)
+            summary = {
+                "generated": len(scores),
+                "dataset_fingerprint": (
+                    scores[0].dataset_fingerprint if scores else None
+                ),
+                "scoring_version": args.version,
+            }
             session.commit()
         print(json.dumps(summary, indent=2))
         return
