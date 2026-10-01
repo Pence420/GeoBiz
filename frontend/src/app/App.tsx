@@ -4,9 +4,12 @@ import {
   analyzeLocation,
   fetchBusinesses,
   fetchCategories,
+  fetchPointLayer,
+  fetchPopulationLayer,
   type Analysis,
   type BusinessCategory,
   type BusinessFeature,
+  type MapLayerFeature,
 } from "../lib/api";
 
 const GeoMap = lazy(() =>
@@ -15,6 +18,15 @@ const GeoMap = lazy(() =>
 
 const DEFAULT_LOCATION = { latitude: -6.1754, longitude: 106.8272 };
 const RADII = [500, 1000, 2000, 3000, 5000];
+type LayerKey = "competitors" | "heatmap" | "population" | "transport" | "commercial";
+
+const layerLabels: Record<LayerKey, string> = {
+  competitors: "Competitors",
+  heatmap: "Heatmap",
+  population: "Population",
+  transport: "Transit",
+  commercial: "Commercial",
+};
 
 const categoryLabels: Record<BusinessCategory, string> = {
   restaurant: "Restaurant",
@@ -31,6 +43,16 @@ const metricLabels: Array<[keyof Analysis["nearby_metrics"], string]> = [
   ["healthcare_count", "Fasilitas kesehatan"],
 ];
 
+const factorLabels: Record<string, string> = {
+  population_density: "Population",
+  competition: "Competition",
+  public_transport: "Public transport",
+  commercial_activity: "Commercial activity",
+  office_activity: "Office density",
+  road_accessibility: "Road accessibility",
+  healthcare_proximity: "Healthcare proximity",
+};
+
 export function App() {
   const [category, setCategory] = useState<BusinessCategory>("restaurant");
   const [radius, setRadius] = useState(1000);
@@ -40,6 +62,16 @@ export function App() {
   >([]);
   const [businesses, setBusinesses] = useState<BusinessFeature[]>([]);
   const [analysis, setAnalysis] = useState<Analysis | null>(null);
+  const [populationAreas, setPopulationAreas] = useState<MapLayerFeature[]>([]);
+  const [transportPoints, setTransportPoints] = useState<MapLayerFeature[]>([]);
+  const [commercialPoints, setCommercialPoints] = useState<MapLayerFeature[]>([]);
+  const [layers, setLayers] = useState<Record<LayerKey, boolean>>({
+    competitors: true,
+    heatmap: false,
+    population: false,
+    transport: false,
+    commercial: false,
+  });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -66,6 +98,30 @@ export function App() {
       })
       .finally(() => setLoading(false));
   }, [category, radius, location]);
+
+  useEffect(() => {
+    if (layers.population && populationAreas.length === 0) {
+      fetchPopulationLayer().then(setPopulationAreas).catch(() =>
+        setError("Layer populasi belum bisa dimuat."),
+      );
+    }
+  }, [layers.population, populationAreas.length]);
+
+  useEffect(() => {
+    if (layers.transport && transportPoints.length === 0) {
+      fetchPointLayer("transport").then(setTransportPoints).catch(() =>
+        setError("Layer transit belum bisa dimuat."),
+      );
+    }
+  }, [layers.transport, transportPoints.length]);
+
+  useEffect(() => {
+    if (layers.commercial && commercialPoints.length === 0) {
+      fetchPointLayer("commercial").then(setCommercialPoints).catch(() =>
+        setError("Layer komersial belum bisa dimuat."),
+      );
+    }
+  }, [commercialPoints.length, layers.commercial]);
 
   const categoryCount = useMemo(
     () =>
@@ -120,15 +176,37 @@ export function App() {
               </label>
             </div>
 
-            <Suspense fallback={<div className="map-canvas map-loading">Memuat peta DKI Jakarta…</div>}>
-              <GeoMap
-                businesses={businesses}
-                category={category}
-                selectedLocation={location}
-                radius={radius}
-                onSelectLocation={selectLocation}
-              />
-            </Suspense>
+            <div className="map-stage">
+              <Suspense fallback={<div className="map-canvas map-loading">Memuat peta DKI Jakarta…</div>}>
+                <GeoMap
+                  businesses={businesses}
+                  category={category}
+                  selectedLocation={location}
+                  radius={radius}
+                  onSelectLocation={selectLocation}
+                  layers={layers}
+                  populationAreas={populationAreas}
+                  transportPoints={transportPoints}
+                  commercialPoints={commercialPoints}
+                />
+              </Suspense>
+              <div className="layer-panel" aria-label="Map layers">
+                <strong>Map layers</strong>
+                {(Object.keys(layerLabels) as LayerKey[]).map((layer) => (
+                  <label key={layer}>
+                    <input
+                      type="checkbox"
+                      checked={layers[layer]}
+                      onChange={() => setLayers((current) => ({
+                        ...current,
+                        [layer]: !current[layer],
+                      }))}
+                    />
+                    <span>{layerLabels[layer]}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
             <p className="map-hint">Klik titik mana pun di dalam DKI Jakarta untuk menghitung ulang.</p>
 
             <section className="locations-panel" id="locations">
@@ -177,6 +255,19 @@ export function App() {
                   <div className="metric" key={key}>
                     <strong>{analysis?.nearby_metrics[key]?.toLocaleString("id-ID") ?? "—"}</strong>
                     <span>{label}</span>
+                  </div>
+                ))}
+              </div>
+            </section>
+
+            <section className="factor-card">
+              <div className="card-title"><h2>Score breakdown</h2><span>Normalized 0–100</span></div>
+              <div className="factor-list">
+                {Object.entries(analysis?.score.normalized_factors ?? {}).map(([factor, score]) => (
+                  <div className="factor-row" key={factor}>
+                    <div><span>{factorLabels[factor] ?? factor}</span><small>{Math.round((analysis?.score.weights[factor] ?? 0) * 100)}% weight</small></div>
+                    <div className="factor-track"><i style={{ width: `${score ?? 0}%` }} /></div>
+                    <strong>{score?.toFixed(0) ?? "—"}</strong>
                   </div>
                 ))}
               </div>

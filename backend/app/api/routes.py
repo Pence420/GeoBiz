@@ -23,6 +23,14 @@ from app.scoring.service import ScoringProfileUnavailableError
 router = APIRouter(prefix="/api")
 
 
+def _validate_bbox(*, west: float, south: float, east: float, north: float) -> None:
+    if west >= east or south >= north:
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "INVALID_BBOX", "message": "bbox bounds are inverted"},
+        )
+
+
 @router.get("/categories", response_model=list[CategorySummary])
 def list_categories(session: Annotated[Session, Depends(get_session)]):
     rows = session.execute(
@@ -50,11 +58,7 @@ def list_businesses(
     north: Annotated[float, Query(ge=-90, le=90)] = -6.08,
     limit: Annotated[int, Query(ge=1, le=5000)] = 3000,
 ):
-    if west >= east or south >= north:
-        raise HTTPException(
-            status_code=422,
-            detail={"code": "INVALID_BBOX", "message": "bbox bounds are inverted"},
-        )
+    _validate_bbox(west=west, south=south, east=east, north=north)
     rows = session.execute(
         text(
             """
@@ -105,6 +109,119 @@ def list_businesses(
         for row in rows
     ]
     return GeoJsonFeatureCollection(features=features)
+
+
+@router.get("/layers/population", response_model=GeoJsonFeatureCollection)
+def population_layer(
+    session: Annotated[Session, Depends(get_session)],
+    west: Annotated[float, Query(ge=-180, le=180)] = 106.68,
+    south: Annotated[float, Query(ge=-90, le=90)] = -6.38,
+    east: Annotated[float, Query(ge=-180, le=180)] = 106.98,
+    north: Annotated[float, Query(ge=-90, le=90)] = -6.08,
+):
+    _validate_bbox(west=west, south=south, east=east, north=north)
+    rows = session.execute(
+        text(
+            """
+            SELECT
+                id,
+                name,
+                population,
+                population_density::float AS population_density,
+                ST_AsGeoJSON(
+                    ST_Multi(ST_SimplifyPreserveTopology(geom, 0.00003))
+                )::json AS geometry
+            FROM administrative_areas
+            WHERE area_type = 'kelurahan'
+              AND population_density IS NOT NULL
+              AND geom && ST_MakeEnvelope(:west, :south, :east, :north, 4326)
+            ORDER BY id
+            """
+        ),
+        {"west": west, "south": south, "east": east, "north": north},
+    ).mappings()
+    return GeoJsonFeatureCollection(
+        attribution="Satu Data Jakarta; © OpenStreetMap contributors",
+        features=[
+            GeoJsonFeature(
+                id=row["id"],
+                geometry=row["geometry"],
+                properties={
+                    "name": row["name"],
+                    "population": row["population"],
+                    "population_density": row["population_density"],
+                },
+            )
+            for row in rows
+        ],
+    )
+
+
+@router.get("/layers/points", response_model=GeoJsonFeatureCollection)
+def point_layer(
+    session: Annotated[Session, Depends(get_session)],
+    layer: Literal[
+        "transport", "commercial", "office", "education", "healthcare"
+    ],
+    west: Annotated[float, Query(ge=-180, le=180)] = 106.68,
+    south: Annotated[float, Query(ge=-90, le=90)] = -6.38,
+    east: Annotated[float, Query(ge=-180, le=180)] = 106.98,
+    north: Annotated[float, Query(ge=-90, le=90)] = -6.08,
+    limit: Annotated[int, Query(ge=1, le=10000)] = 5000,
+):
+    _validate_bbox(west=west, south=south, east=east, north=north)
+    if layer == "transport":
+        query = """
+            SELECT id, name, transport_type AS item_type, source_record_id,
+                   ST_AsGeoJSON(geom)::json AS geometry
+            FROM transport_stops
+            WHERE geom && ST_MakeEnvelope(:west, :south, :east, :north, 4326)
+            ORDER BY id
+            LIMIT :limit
+        """
+        attribution = "PT Transportasi Jakarta"
+    else:
+        poi_types = {
+            "commercial": ["commercial"],
+            "office": ["office"],
+            "education": ["university", "college", "school"],
+            "healthcare": ["hospital", "clinic", "doctors"],
+        }[layer]
+        query = """
+            SELECT id, name, poi_type AS item_type, source_record_id,
+                   ST_AsGeoJSON(ST_PointOnSurface(geom))::json AS geometry
+            FROM pois
+            WHERE poi_type = ANY(:poi_types)
+              AND geom && ST_MakeEnvelope(:west, :south, :east, :north, 4326)
+            ORDER BY id
+            LIMIT :limit
+        """
+        attribution = "© OpenStreetMap contributors"
+    parameters: dict[str, object] = {
+        "west": west,
+        "south": south,
+        "east": east,
+        "north": north,
+        "limit": limit,
+    }
+    if layer != "transport":
+        parameters["poi_types"] = poi_types
+    rows = session.execute(text(query), parameters).mappings()
+    return GeoJsonFeatureCollection(
+        attribution=attribution,
+        features=[
+            GeoJsonFeature(
+                id=row["id"],
+                geometry=row["geometry"],
+                properties={
+                    "name": row["name"],
+                    "item_type": row["item_type"],
+                    "source_record_id": row["source_record_id"],
+                },
+            )
+            for row in rows
+        ],
+    )
 
 
 @router.post(

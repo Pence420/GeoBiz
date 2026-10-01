@@ -1,4 +1,4 @@
-import type { Feature, Point } from "geojson";
+import type { Feature, Geometry, Point } from "geojson";
 
 export type BusinessCategory = "restaurant" | "gym" | "pharmacy";
 
@@ -9,6 +9,17 @@ export type BusinessFeature = Feature<
     category: BusinessCategory;
     source_type: string;
     source_record_id: string;
+  }
+> & { id: number };
+
+export type MapLayerFeature = Feature<
+  Geometry,
+  {
+    name: string | null;
+    population?: number | null;
+    population_density?: number | null;
+    item_type?: string;
+    source_record_id?: string;
   }
 > & { id: number };
 
@@ -24,7 +35,13 @@ export type Analysis = {
     population_density: number | null;
     nearest_major_road_m: number | null;
   };
-  score: { status: string; final_score: number | null; label: string | null };
+  score: {
+    status: string;
+    final_score: number | null;
+    label: string | null;
+    normalized_factors: Record<string, number | null>;
+    weights: Record<string, number>;
+  };
   dataset_fingerprint: string;
 };
 
@@ -48,6 +65,22 @@ export function fetchCategories() {
 export async function fetchBusinesses(category: BusinessCategory) {
   const payload = await request<{ features: BusinessFeature[] }>(
     `/businesses?category=${category}&limit=3000`,
+  );
+  return payload.features;
+}
+
+export async function fetchPopulationLayer() {
+  const payload = await request<{ features: MapLayerFeature[] }>(
+    "/layers/population",
+  );
+  return payload.features;
+}
+
+export async function fetchPointLayer(
+  layer: "transport" | "commercial" | "office" | "education" | "healthcare",
+) {
+  const payload = await request<{ features: MapLayerFeature[] }>(
+    `/layers/points?layer=${layer}&limit=10000`,
   );
   return payload.features;
 }

@@ -97,3 +97,105 @@ def test_analyze_rejects_location_outside_dki(db_session) -> None:
 
     assert response.status_code == 404
     assert response.json()["detail"]["code"] == "LOCATION_OUTSIDE_COVERAGE"
+
+
+def test_population_layer_returns_real_area_geometry(db_session) -> None:
+    source_id = db_session.scalar(
+        text(
+            """
+            INSERT INTO dataset_sources (
+                slug, provider, source_url, license_name, attribution,
+                retrieved_at, sha256
+            ) VALUES (
+                'layer-test', 'Official Test Source', 'https://example.test/layer',
+                'test-only', 'test-only', now(), repeat('c', 64)
+            ) RETURNING id
+            """
+        )
+    )
+    db_session.execute(
+        text(
+            """
+            INSERT INTO administrative_areas (
+                dataset_source_id, source_record_id, name, area_type,
+                population, population_density, retrieved_at,
+                original_properties, geom
+            ) VALUES (
+                :source_id, 'layer-area', 'LAYER TEST AREA', 'kelurahan',
+                12000, 15000, now(), '{}'::jsonb,
+                ST_Multi(ST_GeomFromText(
+                    'POLYGON((10 10, 10.1 10, 10.1 10.1, 10 10.1, 10 10))',
+                    4326
+                ))
+            )
+            """
+        ),
+        {"source_id": source_id},
+    )
+
+    try:
+        response = _client(db_session).get(
+            "/api/layers/population",
+            params={"west": 9.9, "south": 9.9, "east": 10.2, "north": 10.2},
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    feature = response.json()["features"][0]
+    assert feature["properties"] == {
+        "name": "LAYER TEST AREA",
+        "population": 12000,
+        "population_density": 15000.0,
+    }
+    assert feature["geometry"]["type"] == "MultiPolygon"
+
+
+def test_transport_layer_preserves_source_record_identity(db_session) -> None:
+    source_id = db_session.scalar(
+        text(
+            """
+            INSERT INTO dataset_sources (
+                slug, provider, source_url, license_name, attribution,
+                retrieved_at, sha256
+            ) VALUES (
+                'transport-layer-test', 'Official Test Source',
+                'https://example.test/transport', 'test-only', 'test-only',
+                now(), repeat('d', 64)
+            ) RETURNING id
+            """
+        )
+    )
+    db_session.execute(
+        text(
+            """
+            INSERT INTO transport_stops (
+                dataset_source_id, name, transport_type, source_record_id,
+                retrieved_at, original_properties, geom
+            ) VALUES (
+                :source_id, 'Layer Test Stop', 'bus', 'STOP-REAL-1',
+                now(), '{}'::jsonb, ST_SetSRID(ST_Point(10.05, 10.05), 4326)
+            )
+            """
+        ),
+        {"source_id": source_id},
+    )
+
+    try:
+        response = _client(db_session).get(
+            "/api/layers/points",
+            params={
+                "layer": "transport",
+                "west": 10,
+                "south": 10,
+                "east": 10.1,
+                "north": 10.1,
+            },
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    feature = response.json()["features"][0]
+    assert feature["properties"]["name"] == "Layer Test Stop"
+    assert feature["properties"]["source_record_id"] == "STOP-REAL-1"

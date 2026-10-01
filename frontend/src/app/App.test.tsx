@@ -32,7 +32,13 @@ beforeEach(() => {
           population_density: 1093.87,
           nearest_major_road_m: 338.5,
         },
-        score: { status: "complete", final_score: 51.2, label: "Moderate" },
+        score: {
+          status: "complete",
+          final_score: 51.2,
+          label: "Moderate",
+          normalized_factors: { competition: 4.7, office_activity: 100 },
+          weights: { competition: 0.2, office_activity: 0.2 },
+        },
         dataset_fingerprint: "1262b5d3ef6e4ca35d7710f57a6b3298",
       });
     }),
