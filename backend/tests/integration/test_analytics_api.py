@@ -30,10 +30,11 @@ def _seed_search_and_score_scope(db_session) -> None:
         text(
             """
             INSERT INTO administrative_areas (
-                dataset_source_id, source_record_id, name, area_type,
+                data_release_id, dataset_source_id, source_record_id, name, area_type,
                 population, population_density, retrieved_at,
                 original_properties, geom
             ) VALUES (
+                (SELECT id FROM data_releases WHERE status = 'active'),
                 :source_id, 'senayan-test', 'SENAYAN TEST', 'kelurahan',
                 10000, 12500, now(), '{}'::jsonb,
                 ST_Multi(ST_MakeEnvelope(106.79, -6.23, 106.81, -6.21, 4326))
@@ -49,11 +50,13 @@ def _seed_search_and_score_scope(db_session) -> None:
         text(
             """
             INSERT INTO businesses (
-                category_id, dataset_source_id, name, source_type,
-                source_record_id, retrieved_at, original_tags, geom
+                data_release_id, category_id, dataset_source_id, name, source_type,
+                source_record_id, business_subtype, taxonomy_version,
+                retrieved_at, original_tags, geom
             ) VALUES (
+                (SELECT id FROM data_releases WHERE status = 'active'),
                 :category_id, :source_id, 'Senayan Test Restaurant', 'node',
-                'restaurant-test', now(), '{}'::jsonb,
+                'restaurant-test', 'restaurant', 'v1.0.0', now(), '{}'::jsonb,
                 ST_SetSRID(ST_Point(106.8, -6.22), 4326)
             )
             """
@@ -64,9 +67,10 @@ def _seed_search_and_score_scope(db_session) -> None:
         text(
             """
             INSERT INTO pois (
-                dataset_source_id, name, poi_type, source_type,
+                data_release_id, dataset_source_id, name, poi_type, source_type,
                 source_record_id, retrieved_at, original_tags, geom
             ) VALUES (
+                (SELECT id FROM data_releases WHERE status = 'active'),
                 :source_id, 'Senayan Test Landmark', 'commercial', 'node',
                 'landmark-test', now(), '{}'::jsonb,
                 ST_SetSRID(ST_Point(106.801, -6.221), 4326)
@@ -80,10 +84,11 @@ def _seed_search_and_score_scope(db_session) -> None:
         text(
             """
             INSERT INTO opportunity_scores (
-                administrative_area_id, category_id, radius_m,
+                data_release_id, administrative_area_id, category_id, radius_m,
                 dataset_fingerprint, scoring_version, final_score, label,
                 raw_factors, normalized_factors
             ) VALUES (
+                (SELECT id FROM data_releases WHERE status = 'active'),
                 :area_id, :category_id, 1000, :fingerprint, 'v1.0.0',
                 82, 'High',
                 '{"population_density": 12500, "competition": 1}'::jsonb,

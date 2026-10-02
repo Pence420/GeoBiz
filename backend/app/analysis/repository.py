@@ -2,6 +2,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.analysis.contracts import ContainingArea, NearbyMetrics
+from app.datasets.service import active_release_id
 
 
 class SpatialRepository:
@@ -11,6 +12,7 @@ class SpatialRepository:
     def find_containing_area(
         self, *, longitude: float, latitude: float
     ) -> ContainingArea | None:
+        release_id = active_release_id(self.session)
         row = self.session.execute(
             text(
                 """
@@ -22,7 +24,8 @@ class SpatialRepository:
                     (
                         SELECT coverage.official_code
                         FROM administrative_areas AS coverage
-                        WHERE coverage.official_code = 'ID-JK'
+                        WHERE coverage.data_release_id = :release_id
+                          AND coverage.official_code = 'ID-JK'
                           AND ST_Covers(
                               coverage.geom,
                               ST_SetSRID(ST_Point(:longitude, :latitude), 4326)
@@ -30,7 +33,8 @@ class SpatialRepository:
                         LIMIT 1
                     ) AS coverage_official_code
                 FROM administrative_areas AS area
-                WHERE ST_Covers(
+                WHERE area.data_release_id = :release_id
+                  AND ST_Covers(
                     area.geom,
                     ST_SetSRID(ST_Point(:longitude, :latitude), 4326)
                 )
@@ -45,7 +49,11 @@ class SpatialRepository:
                 LIMIT 1
                 """
             ),
-            {"longitude": longitude, "latitude": latitude},
+            {
+                "longitude": longitude,
+                "latitude": latitude,
+                "release_id": release_id,
+            },
         ).mappings().first()
         return ContainingArea(**row) if row else None
 
@@ -62,6 +70,7 @@ class SpatialRepository:
             "latitude": latitude,
             "category_slug": category_slug,
             "radius_m": radius_m,
+            "release_id": active_release_id(self.session),
         }
         competitor_count = self.session.scalar(
             text(
@@ -71,6 +80,7 @@ class SpatialRepository:
                 JOIN business_categories AS category
                   ON category.id = business.category_id
                 WHERE category.slug = :category_slug
+                  AND business.data_release_id = :release_id
                   AND ST_DWithin(
                       business.geom::geography,
                       ST_SetSRID(ST_Point(:longitude, :latitude), 4326)::geography,
@@ -110,7 +120,13 @@ class SpatialRepository:
         poi_types: tuple[str, ...] | None = None,
         distinct_station: bool = False,
     ) -> int | None:
-        total = self.session.scalar(text(f"SELECT count(*) FROM {table_name}"))
+        total = self.session.scalar(
+            text(
+                f"SELECT count(*) FROM {table_name} "
+                "WHERE data_release_id = :release_id"
+            ),
+            parameters,
+        )
         if not total:
             return None
         if table_name == "transport_stops":
@@ -122,7 +138,8 @@ class SpatialRepository:
             query = f"""
                 SELECT {count_expression}
                 FROM transport_stops
-                WHERE ST_DWithin(
+                WHERE data_release_id = :release_id
+                  AND ST_DWithin(
                     geom::geography,
                     ST_SetSRID(ST_Point(:longitude, :latitude), 4326)::geography,
                     :radius_m
@@ -138,7 +155,8 @@ class SpatialRepository:
                     """
                     SELECT count(*)
                     FROM pois
-                    WHERE poi_type = ANY(:poi_types)
+                    WHERE data_release_id = :release_id
+                      AND poi_type = ANY(:poi_types)
                       AND ST_DWithin(
                           geom::geography,
                           ST_SetSRID(ST_Point(:longitude, :latitude), 4326)::geography,
@@ -152,7 +170,13 @@ class SpatialRepository:
         )
 
     def _nearest_road_distance(self, parameters: dict[str, object]) -> float | None:
-        if not self.session.scalar(text("SELECT EXISTS (SELECT 1 FROM roads)")):
+        if not self.session.scalar(
+            text(
+                "SELECT EXISTS (SELECT 1 FROM roads "
+                "WHERE data_release_id = :release_id)"
+            ),
+            parameters,
+        ):
             return None
         distance = self.session.scalar(
             text(
@@ -162,7 +186,8 @@ class SpatialRepository:
                     ST_SetSRID(ST_Point(:longitude, :latitude), 4326)::geography
                 ))
                 FROM roads
-                WHERE road_type IN ('motorway', 'trunk', 'primary', 'secondary')
+                WHERE data_release_id = :release_id
+                  AND road_type IN ('motorway', 'trunk', 'primary', 'secondary')
                 """
             ),
             parameters,

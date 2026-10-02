@@ -5,7 +5,7 @@ from sqlalchemy import delete, select, text
 from sqlalchemy.orm import Session
 
 from app.db.models import BusinessCategory, NormalizationProfile
-from app.datasets.service import current_dataset_fingerprint
+from app.datasets.service import active_release_id, current_dataset_fingerprint
 from app.scoring.profiles import percentile_breakpoints
 
 SUPPORTED_RADII = (500, 1000, 2000, 3000, 5000)
@@ -25,13 +25,16 @@ def generate_normalization_profiles(
     *,
     version: str = "v1.0.0",
     grid_size_m: int = 1000,
+    release_id: int | None = None,
 ) -> list[NormalizationProfile]:
+    release_id = release_id or active_release_id(session)
     fingerprint = current_dataset_fingerprint(session)
     categories = session.scalars(
         select(BusinessCategory).where(BusinessCategory.is_active.is_(True))
     ).all()
     session.execute(
         delete(NormalizationProfile).where(
+            NormalizationProfile.data_release_id == release_id,
             NormalizationProfile.dataset_fingerprint == fingerprint,
             NormalizationProfile.version == version,
         )
@@ -44,6 +47,7 @@ def generate_normalization_profiles(
                 category_slug=category.slug,
                 radius_m=radius_m,
                 grid_size_m=grid_size_m,
+                release_id=release_id,
             )
             if not rows:
                 raise ValueError("hex reference grid produced no DKI observations")
@@ -54,6 +58,7 @@ def generate_normalization_profiles(
                 for factor in FACTOR_NAMES
             }
             profile = NormalizationProfile(
+                data_release_id=release_id,
                 category_id=category.id,
                 radius_m=radius_m,
                 dataset_fingerprint=fingerprint,
@@ -73,6 +78,7 @@ def _reference_metrics(
     category_slug: str,
     radius_m: int,
     grid_size_m: int,
+    release_id: int,
 ) -> list[Mapping[str, Any]]:
     return list(
         session.execute(
@@ -81,7 +87,8 @@ def _reference_metrics(
                 WITH kelurahan_union AS (
                     SELECT ST_UnaryUnion(ST_Collect(geom)) AS geom
                     FROM administrative_areas
-                    WHERE area_type = 'kelurahan'
+                    WHERE data_release_id = :release_id
+                      AND area_type = 'kelurahan'
                       AND population_density IS NOT NULL
                 ),
                 land_utm AS (
@@ -105,6 +112,7 @@ def _reference_metrics(
                         JOIN business_categories AS category
                           ON category.id = business.category_id
                         WHERE category.slug = :category_slug
+                          AND business.data_release_id = :release_id
                           AND business.geom && ST_Expand(point.geom, :radius_degrees)
                           AND ST_DWithin(
                               business.geom::geography,
@@ -115,7 +123,8 @@ def _reference_metrics(
                     (
                         SELECT count(DISTINCT coalesce(stop.parent_stop_id, stop.id))::float
                         FROM transport_stops AS stop
-                        WHERE stop.geom && ST_Expand(point.geom, :radius_degrees)
+                        WHERE stop.data_release_id = :release_id
+                          AND stop.geom && ST_Expand(point.geom, :radius_degrees)
                           AND ST_DWithin(
                             stop.geom::geography,
                             point.geom::geography,
@@ -125,7 +134,8 @@ def _reference_metrics(
                     (
                         SELECT count(*)::float
                         FROM pois AS poi
-                        WHERE poi.poi_type = 'commercial'
+                        WHERE poi.data_release_id = :release_id
+                          AND poi.poi_type = 'commercial'
                           AND poi.geom && ST_Expand(point.geom, :radius_degrees)
                           AND ST_DWithin(
                               poi.geom::geography,
@@ -136,7 +146,8 @@ def _reference_metrics(
                     (
                         SELECT count(*)::float
                         FROM pois AS poi
-                        WHERE poi.poi_type = 'office'
+                        WHERE poi.data_release_id = :release_id
+                          AND poi.poi_type = 'office'
                           AND poi.geom && ST_Expand(point.geom, :radius_degrees)
                           AND ST_DWithin(
                               poi.geom::geography,
@@ -148,7 +159,8 @@ def _reference_metrics(
                     (
                         SELECT count(*)::float
                         FROM pois AS poi
-                        WHERE poi.poi_type IN ('hospital', 'clinic', 'doctors')
+                        WHERE poi.data_release_id = :release_id
+                          AND poi.poi_type IN ('hospital', 'clinic', 'doctors')
                           AND poi.geom && ST_Expand(point.geom, :radius_degrees)
                           AND ST_DWithin(
                               poi.geom::geography,
@@ -160,7 +172,8 @@ def _reference_metrics(
                 JOIN LATERAL (
                     SELECT population_density
                     FROM administrative_areas
-                    WHERE area_type = 'kelurahan'
+                    WHERE data_release_id = :release_id
+                      AND area_type = 'kelurahan'
                       AND ST_Covers(geom, point.geom)
                     ORDER BY ST_Area(geom)
                     LIMIT 1
@@ -171,6 +184,7 @@ def _reference_metrics(
                         point.geom::geography
                     ) AS distance_m
                     FROM roads AS road
+                    WHERE road.data_release_id = :release_id
                     ORDER BY road.geom <-> point.geom
                     LIMIT 1
                 ) AS road ON true
@@ -182,6 +196,7 @@ def _reference_metrics(
                 # Coarse equatorial bbox prefilter only; geography remains authoritative.
                 "radius_degrees": radius_m / 110_000,
                 "grid_size_m": grid_size_m,
+                "release_id": release_id,
             },
         ).mappings()
     )

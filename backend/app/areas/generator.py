@@ -4,7 +4,7 @@ from typing import Any
 from sqlalchemy import delete, select, text
 from sqlalchemy.orm import Session
 
-from app.datasets.service import current_dataset_fingerprint
+from app.datasets.service import active_release_id, current_dataset_fingerprint
 from app.db.models import (
     BusinessCategory,
     NormalizationProfile,
@@ -19,8 +19,10 @@ def generate_opportunity_scores(
     session: Session,
     *,
     version: str = "v1.0.0",
+    release_id: int | None = None,
 ) -> list[OpportunityScore]:
     """Generate one auditable point-on-surface observation per kelurahan."""
+    release_id = release_id or active_release_id(session)
     fingerprint = current_dataset_fingerprint(session)
     categories = session.scalars(
         select(BusinessCategory).where(BusinessCategory.is_active.is_(True))
@@ -42,6 +44,7 @@ def generate_opportunity_scores(
         for radius_m in SUPPORTED_RADII:
             profile = session.scalar(
                 select(NormalizationProfile).where(
+                    NormalizationProfile.data_release_id == release_id,
                     NormalizationProfile.category_id == category.id,
                     NormalizationProfile.radius_m == radius_m,
                     NormalizationProfile.dataset_fingerprint == fingerprint,
@@ -61,7 +64,10 @@ def generate_opportunity_scores(
                 percentiles=profile.percentiles,
             )
             for row in _area_metrics(
-                session, category_slug=category.slug, radius_m=radius_m
+                session,
+                category_slug=category.slug,
+                radius_m=radius_m,
+                release_id=release_id,
             ):
                 raw_factors = {
                     factor: (
@@ -83,6 +89,7 @@ def generate_opportunity_scores(
                     )
                 generated.append(
                     OpportunityScore(
+                        data_release_id=release_id,
                         administrative_area_id=row["area_id"],
                         category_id=category.id,
                         radius_m=radius_m,
@@ -99,6 +106,7 @@ def generate_opportunity_scores(
     # Expensive spatial work finishes before this short replacement transaction.
     session.execute(
         delete(OpportunityScore).where(
+            OpportunityScore.data_release_id == release_id,
             OpportunityScore.dataset_fingerprint == fingerprint,
             OpportunityScore.scoring_version == version,
         )
@@ -113,6 +121,7 @@ def _area_metrics(
     *,
     category_slug: str,
     radius_m: int,
+    release_id: int,
 ) -> list[Mapping[str, Any]]:
     return list(
         session.execute(
@@ -124,7 +133,8 @@ def _area_metrics(
                         population_density,
                         ST_PointOnSurface(geom) AS geom
                     FROM administrative_areas
-                    WHERE area_type = 'kelurahan'
+                    WHERE data_release_id = :release_id
+                      AND area_type = 'kelurahan'
                       AND population_density IS NOT NULL
                 )
                 SELECT
@@ -136,6 +146,7 @@ def _area_metrics(
                         JOIN business_categories AS category
                           ON category.id = business.category_id
                         WHERE category.slug = :category_slug
+                          AND business.data_release_id = :release_id
                           AND business.geom && ST_Expand(point.geom, :radius_degrees)
                           AND ST_DWithin(
                               business.geom::geography,
@@ -146,7 +157,8 @@ def _area_metrics(
                     (
                         SELECT count(DISTINCT coalesce(stop.parent_stop_id, stop.id))::float
                         FROM transport_stops AS stop
-                        WHERE stop.geom && ST_Expand(point.geom, :radius_degrees)
+                        WHERE stop.data_release_id = :release_id
+                          AND stop.geom && ST_Expand(point.geom, :radius_degrees)
                           AND ST_DWithin(
                               stop.geom::geography,
                               point.geom::geography,
@@ -156,7 +168,8 @@ def _area_metrics(
                     (
                         SELECT count(*)::float
                         FROM pois AS poi
-                        WHERE poi.poi_type = 'commercial'
+                        WHERE poi.data_release_id = :release_id
+                          AND poi.poi_type = 'commercial'
                           AND poi.geom && ST_Expand(point.geom, :radius_degrees)
                           AND ST_DWithin(
                               poi.geom::geography,
@@ -167,7 +180,8 @@ def _area_metrics(
                     (
                         SELECT count(*)::float
                         FROM pois AS poi
-                        WHERE poi.poi_type = 'office'
+                        WHERE poi.data_release_id = :release_id
+                          AND poi.poi_type = 'office'
                           AND poi.geom && ST_Expand(point.geom, :radius_degrees)
                           AND ST_DWithin(
                               poi.geom::geography,
@@ -179,7 +193,8 @@ def _area_metrics(
                     (
                         SELECT count(*)::float
                         FROM pois AS poi
-                        WHERE poi.poi_type IN ('hospital', 'clinic', 'doctors')
+                        WHERE poi.data_release_id = :release_id
+                          AND poi.poi_type IN ('hospital', 'clinic', 'doctors')
                           AND poi.geom && ST_Expand(point.geom, :radius_degrees)
                           AND ST_DWithin(
                               poi.geom::geography,
@@ -194,6 +209,7 @@ def _area_metrics(
                         point.geom::geography
                     ) AS distance_m
                     FROM roads AS road
+                    WHERE road.data_release_id = :release_id
                     ORDER BY road.geom <-> point.geom
                     LIMIT 1
                 ) AS road ON true
@@ -204,6 +220,7 @@ def _area_metrics(
                 "category_slug": category_slug,
                 "radius_m": radius_m,
                 "radius_degrees": radius_m / 110_000,
+                "release_id": release_id,
             },
         ).mappings()
     )

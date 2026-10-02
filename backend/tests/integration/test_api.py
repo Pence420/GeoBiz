@@ -31,11 +31,14 @@ def test_businesses_returns_real_source_identity_as_geojson(db_session) -> None:
         text(
             """
             INSERT INTO businesses (
-                category_id, dataset_source_id, name, source_type,
-                source_record_id, retrieved_at, original_tags, geom
+                data_release_id, category_id, dataset_source_id, name, source_type,
+                source_record_id, business_subtype, taxonomy_version,
+                retrieved_at, original_tags, geom
             ) VALUES (
+                (SELECT id FROM data_releases WHERE status = 'active'),
                 :category_id, :source_id, 'API Test Restaurant', 'node',
-                '987654321', now(), '{"name":"API Test Restaurant"}'::jsonb,
+                '987654321', 'restaurant', 'v1.0.0', now(),
+                '{"name":"API Test Restaurant"}'::jsonb,
                 ST_SetSRID(ST_Point(106.82, -6.18), 4326)
             )
             """
@@ -117,10 +120,11 @@ def test_population_layer_returns_real_area_geometry(db_session) -> None:
         text(
             """
             INSERT INTO administrative_areas (
-                dataset_source_id, source_record_id, name, area_type,
+                data_release_id, dataset_source_id, source_record_id, name, area_type,
                 population, population_density, retrieved_at,
                 original_properties, geom
             ) VALUES (
+                (SELECT id FROM data_releases WHERE status = 'active'),
                 :source_id, 'layer-area', 'LAYER TEST AREA', 'kelurahan',
                 12000, 15000, now(), '{}'::jsonb,
                 ST_Multi(ST_GeomFromText(
@@ -170,9 +174,10 @@ def test_transport_layer_preserves_source_record_identity(db_session) -> None:
         text(
             """
             INSERT INTO transport_stops (
-                dataset_source_id, name, transport_type, source_record_id,
+                data_release_id, dataset_source_id, name, transport_type, source_record_id,
                 retrieved_at, original_properties, geom
             ) VALUES (
+                (SELECT id FROM data_releases WHERE status = 'active'),
                 :source_id, 'Layer Test Stop', 'bus', 'STOP-REAL-1',
                 now(), '{}'::jsonb, ST_SetSRID(ST_Point(10.05, 10.05), 4326)
             )

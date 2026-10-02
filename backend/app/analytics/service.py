@@ -1,4 +1,4 @@
-from sqlalchemy import func, select, text
+from sqlalchemy import and_, func, select, text
 from sqlalchemy.orm import Session
 
 from app.analytics.contracts import (
@@ -13,7 +13,11 @@ from app.analytics.contracts import (
     ScoreBand,
     SearchResult,
 )
-from app.datasets.service import current_dataset_fingerprint, list_dataset_snapshots
+from app.datasets.service import (
+    active_release_id,
+    current_dataset_fingerprint,
+    list_dataset_snapshots,
+)
 from app.db.models import Business, BusinessCategory, ScoringWeight
 
 SCORING_VERSION = "v1.0.0"
@@ -36,6 +40,7 @@ def analytics(
     radius_m: int,
 ) -> AnalyticsResponse:
     fingerprint = current_dataset_fingerprint(session)
+    release_id = active_release_id(session)
     category_counts = [
         CategoryCount(category=row.slug, count=row.business_count)
         for row in session.execute(
@@ -43,7 +48,13 @@ def analytics(
                 BusinessCategory.slug,
                 func.count(Business.id).label("business_count"),
             )
-            .outerjoin(Business, Business.category_id == BusinessCategory.id)
+            .outerjoin(
+                Business,
+                and_(
+                    Business.category_id == BusinessCategory.id,
+                    Business.data_release_id == release_id,
+                ),
+            )
             .where(BusinessCategory.is_active.is_(True))
             .group_by(BusinessCategory.id)
             .order_by(BusinessCategory.id)
@@ -54,6 +65,7 @@ def analytics(
         "radius_m": radius_m,
         "fingerprint": fingerprint,
         "scoring_version": SCORING_VERSION,
+        "release_id": release_id,
     }
     rows = session.execute(
         text(
@@ -72,6 +84,8 @@ def analytics(
             JOIN administrative_areas AS area
               ON area.id = score.administrative_area_id
             WHERE category.slug = :category_slug
+              AND score.data_release_id = :release_id
+              AND area.data_release_id = :release_id
               AND score.radius_m = :radius_m
               AND score.dataset_fingerprint = :fingerprint
               AND score.scoring_version = :scoring_version
@@ -104,15 +118,21 @@ def analytics(
             """
             SELECT
                 (SELECT count(*) FROM administrative_areas
-                    WHERE area_type = 'kelurahan' AND population_density IS NOT NULL)
+                    WHERE data_release_id = :release_id
+                      AND area_type = 'kelurahan' AND population_density IS NOT NULL)
                     AS populated_areas,
-                (SELECT count(*) FROM transport_stops) AS transport_stops,
-                (SELECT count(*) FROM pois) AS pois,
-                (SELECT count(*) FROM roads) AS roads,
-                (SELECT 100.0 * count(name) / nullif(count(*), 0) FROM businesses)
+                (SELECT count(*) FROM transport_stops
+                    WHERE data_release_id = :release_id) AS transport_stops,
+                (SELECT count(*) FROM pois
+                    WHERE data_release_id = :release_id) AS pois,
+                (SELECT count(*) FROM roads
+                    WHERE data_release_id = :release_id) AS roads,
+                (SELECT 100.0 * count(name) / nullif(count(*), 0) FROM businesses
+                    WHERE data_release_id = :release_id)
                     AS named_business_percent
             """
-        )
+        ),
+        {"release_id": release_id},
     ).mappings().one()
     coverage = [
         CoverageMetric(
@@ -210,6 +230,7 @@ def methodology(session: Session) -> MethodologyResponse:
 
 
 def search(session: Session, *, query: str, limit: int) -> list[SearchResult]:
+    release_id = active_release_id(session)
     coordinate = _parse_coordinate(query)
     results: list[SearchResult] = []
     if coordinate is not None:
@@ -219,12 +240,17 @@ def search(session: Session, *, query: str, limit: int) -> list[SearchResult]:
                 """
                 SELECT EXISTS (
                     SELECT 1 FROM administrative_areas
-                    WHERE official_code = 'ID-JK'
+                    WHERE data_release_id = :release_id
+                      AND official_code = 'ID-JK'
                       AND ST_Covers(geom, ST_SetSRID(ST_Point(:longitude, :latitude), 4326))
                 )
                 """
             ),
-            {"longitude": longitude, "latitude": latitude},
+            {
+                "longitude": longitude,
+                "latitude": latitude,
+                "release_id": release_id,
+            },
         )
         if inside:
             results.append(
@@ -253,7 +279,8 @@ def search(session: Session, *, query: str, limit: int) -> list[SearchResult]:
                     NULL::text AS source_record_id,
                     1 AS priority
                 FROM administrative_areas AS area
-                WHERE area.name ILIKE :pattern
+                WHERE area.data_release_id = :release_id
+                  AND area.name ILIKE :pattern
                   AND area.area_type IN ('kelurahan', 'kecamatan', 'city')
                 UNION ALL
                 SELECT
@@ -267,7 +294,8 @@ def search(session: Session, *, query: str, limit: int) -> list[SearchResult]:
                     2
                 FROM businesses AS business
                 JOIN business_categories AS category ON category.id = business.category_id
-                WHERE business.name IS NOT NULL AND business.name ILIKE :pattern
+                WHERE business.data_release_id = :release_id
+                  AND business.name IS NOT NULL AND business.name ILIKE :pattern
                 UNION ALL
                 SELECT
                     'landmark:' || poi.id,
@@ -279,7 +307,8 @@ def search(session: Session, *, query: str, limit: int) -> list[SearchResult]:
                     poi.source_record_id,
                     3
                 FROM pois AS poi
-                WHERE poi.name IS NOT NULL AND poi.name ILIKE :pattern
+                WHERE poi.data_release_id = :release_id
+                  AND poi.name IS NOT NULL AND poi.name ILIKE :pattern
             )
             SELECT id, name, result_type, subtitle, longitude, latitude,
                    source_record_id
@@ -290,7 +319,12 @@ def search(session: Session, *, query: str, limit: int) -> list[SearchResult]:
             LIMIT :limit
             """
         ),
-        {"query": query.strip(), "pattern": f"%{query.strip()}%", "limit": limit},
+        {
+            "query": query.strip(),
+            "pattern": f"%{query.strip()}%",
+            "limit": limit,
+            "release_id": release_id,
+        },
     ).mappings()
     results.extend(SearchResult(**row) for row in rows)
     return results[:limit]

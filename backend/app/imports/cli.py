@@ -3,6 +3,7 @@ import argparse
 from pathlib import Path
 
 from app.db.session import SessionLocal
+from app.datasets.service import active_release_id
 from app.imports.manifest import load_verified_manifest
 from app.imports.administrative import boundary_geometry
 from app.imports.gtfs import filter_gtfs_to_boundary, parse_gtfs_stops
@@ -112,7 +113,11 @@ def main() -> None:
             raise ValueError("staging batch does not belong to the verified manifest")
         with SessionLocal() as session:
             import_run_id = promote_osm_records(
-                session, manifest, batch.records, batch.quality_report
+                session,
+                active_release_id(session),
+                manifest,
+                batch.records,
+                batch.quality_report,
             )
             session.commit()
         print(f"promoted import run {import_run_id}")
@@ -122,7 +127,9 @@ def main() -> None:
         manifest = load_verified_manifest(args.manifest, args.raw)
         payload = json.loads(args.raw.read_text(encoding="utf-8"))
         with SessionLocal() as session:
-            import_run_id = promote_dki_boundary(session, manifest, payload)
+            import_run_id = promote_dki_boundary(
+                session, active_release_id(session), manifest, payload
+            )
             session.commit()
         print(f"promoted boundary import run {import_run_id}")
         return
@@ -141,7 +148,11 @@ def main() -> None:
         )
         with SessionLocal() as session:
             import_run_id = promote_gtfs_stops(
-                session, manifest, records, quality_report
+                session,
+                active_release_id(session),
+                manifest,
+                records,
+                quality_report,
             )
             session.commit()
         print(quality_report.model_dump_json(indent=2))
@@ -160,7 +171,12 @@ def main() -> None:
         )
         with SessionLocal() as session:
             import_run_id = promote_osm_context(
-                session, manifest, pois, roads, quality_report
+                session,
+                active_release_id(session),
+                manifest,
+                pois,
+                roads,
+                quality_report,
             )
             session.commit()
         print(quality_report.model_dump_json(indent=2))
@@ -185,6 +201,7 @@ def main() -> None:
         with SessionLocal() as session:
             import_run_id = promote_population_areas(
                 session,
+                active_release_id(session),
                 population_manifest,
                 geometry_manifest,
                 records,

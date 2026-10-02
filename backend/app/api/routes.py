@@ -2,7 +2,7 @@ import json
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import func, select, text
+from sqlalchemy import and_, func, select, text
 from sqlalchemy.orm import Session
 
 from app.analysis.contracts import AnalyzeLocationRequest, AnalyzeLocationResponse
@@ -23,8 +23,13 @@ from app.api.contracts import (
     GeoJsonFeatureCollection,
     MetadataResponse,
 )
-from app.datasets.service import current_dataset_fingerprint
-from app.db.models import Business, BusinessCategory, DatasetSource
+from app.datasets.service import active_release_id, current_dataset_fingerprint
+from app.db.models import (
+    Business,
+    BusinessCategory,
+    DataReleaseSource,
+    DatasetSource,
+)
 from app.db.session import get_session
 from app.scoring.service import ScoringProfileUnavailableError
 
@@ -44,6 +49,7 @@ def _validate_bbox(*, west: float, south: float, east: float, north: float) -> N
 @router.get("/business-categories", response_model=list[CategorySummary])
 @router.get("/categories", response_model=list[CategorySummary], include_in_schema=False)
 def list_categories(session: Annotated[Session, Depends(get_session)]):
+    release_id = active_release_id(session)
     rows = session.execute(
         select(
             BusinessCategory.slug,
@@ -51,7 +57,13 @@ def list_categories(session: Annotated[Session, Depends(get_session)]):
             BusinessCategory.description,
             func.count(Business.id).label("business_count"),
         )
-        .outerjoin(Business, Business.category_id == BusinessCategory.id)
+        .outerjoin(
+            Business,
+            and_(
+                Business.category_id == BusinessCategory.id,
+                Business.data_release_id == release_id,
+            ),
+        )
         .where(BusinessCategory.is_active.is_(True))
         .group_by(BusinessCategory.id)
         .order_by(BusinessCategory.id)
@@ -70,6 +82,7 @@ def list_businesses(
     limit: Annotated[int, Query(ge=1, le=5000)] = 3000,
 ):
     _validate_bbox(west=west, south=south, east=east, north=north)
+    release_id = active_release_id(session)
     rows = session.execute(
         text(
             """
@@ -86,6 +99,7 @@ def list_businesses(
                 CAST(:category AS text) IS NULL
                 OR category.slug = CAST(:category AS text)
             )
+              AND business.data_release_id = :release_id
               AND business.geom && ST_MakeEnvelope(
                   :west, :south, :east, :north, 4326
               )
@@ -95,6 +109,7 @@ def list_businesses(
         ),
         {
             "category": category,
+            "release_id": release_id,
             "west": west,
             "south": south,
             "east": east,
@@ -131,6 +146,7 @@ def population_layer(
     north: Annotated[float, Query(ge=-90, le=90)] = -5.60,
 ):
     _validate_bbox(west=west, south=south, east=east, north=north)
+    release_id = active_release_id(session)
     rows = session.execute(
         text(
             """
@@ -144,12 +160,19 @@ def population_layer(
                 )::json AS geometry
             FROM administrative_areas
             WHERE area_type = 'kelurahan'
+              AND data_release_id = :release_id
               AND population_density IS NOT NULL
               AND geom && ST_MakeEnvelope(:west, :south, :east, :north, 4326)
             ORDER BY id
             """
         ),
-        {"west": west, "south": south, "east": east, "north": north},
+        {
+            "west": west,
+            "south": south,
+            "east": east,
+            "north": north,
+            "release_id": release_id,
+        },
     ).mappings()
     return GeoJsonFeatureCollection(
         attribution="Satu Data Jakarta; © OpenStreetMap contributors",
@@ -181,12 +204,14 @@ def point_layer(
     limit: Annotated[int, Query(ge=1, le=10000)] = 5000,
 ):
     _validate_bbox(west=west, south=south, east=east, north=north)
+    release_id = active_release_id(session)
     if layer == "transport":
         query = """
             SELECT id, name, transport_type AS item_type, source_record_id,
                    ST_AsGeoJSON(geom)::json AS geometry
             FROM transport_stops
-            WHERE geom && ST_MakeEnvelope(:west, :south, :east, :north, 4326)
+            WHERE data_release_id = :release_id
+              AND geom && ST_MakeEnvelope(:west, :south, :east, :north, 4326)
             ORDER BY id
             LIMIT :limit
         """
@@ -202,7 +227,8 @@ def point_layer(
             SELECT id, name, poi_type AS item_type, source_record_id,
                    ST_AsGeoJSON(ST_PointOnSurface(geom))::json AS geometry
             FROM pois
-            WHERE poi_type = ANY(:poi_types)
+            WHERE data_release_id = :release_id
+              AND poi_type = ANY(:poi_types)
               AND geom && ST_MakeEnvelope(:west, :south, :east, :north, 4326)
             ORDER BY id
             LIMIT :limit
@@ -214,6 +240,7 @@ def point_layer(
         "east": east,
         "north": north,
         "limit": limit,
+        "release_id": release_id,
     }
     if layer != "transport":
         parameters["poi_types"] = poi_types
@@ -245,6 +272,7 @@ def road_layer(
     limit: Annotated[int, Query(ge=1, le=20000)] = 10000,
 ):
     _validate_bbox(west=west, south=south, east=east, north=north)
+    release_id = active_release_id(session)
     rows = session.execute(
         text(
             """
@@ -252,12 +280,20 @@ def road_layer(
                    ST_AsGeoJSON(ST_SimplifyPreserveTopology(geom, 0.00002))::json
                        AS geometry
             FROM roads
-            WHERE geom && ST_MakeEnvelope(:west, :south, :east, :north, 4326)
+            WHERE data_release_id = :release_id
+              AND geom && ST_MakeEnvelope(:west, :south, :east, :north, 4326)
             ORDER BY id
             LIMIT :limit
             """
         ),
-        {"west": west, "south": south, "east": east, "north": north, "limit": limit},
+        {
+            "west": west,
+            "south": south,
+            "east": east,
+            "north": north,
+            "limit": limit,
+            "release_id": release_id,
+        },
     ).mappings()
     return GeoJsonFeatureCollection(
         features=[
@@ -434,14 +470,30 @@ def search_locations(
 
 @router.get("/datasets", response_model=list[DatasetSummary])
 def datasets(session: Annotated[Session, Depends(get_session)]):
-    rows = session.scalars(select(DatasetSource).order_by(DatasetSource.slug)).all()
+    release_id = active_release_id(session)
+    rows = session.scalars(
+        select(DatasetSource)
+        .join(
+            DataReleaseSource,
+            DataReleaseSource.dataset_source_id == DatasetSource.id,
+        )
+        .where(DataReleaseSource.data_release_id == release_id)
+        .order_by(DatasetSource.slug)
+    ).all()
     return [DatasetSummary.model_validate(row, from_attributes=True) for row in rows]
 
 
 @router.get("/metadata", response_model=MetadataResponse)
 def metadata(session: Annotated[Session, Depends(get_session)]):
+    release_id = active_release_id(session)
     datasets = session.scalars(
-        select(DatasetSource).order_by(DatasetSource.slug)
+        select(DatasetSource)
+        .join(
+            DataReleaseSource,
+            DataReleaseSource.dataset_source_id == DatasetSource.id,
+        )
+        .where(DataReleaseSource.data_release_id == release_id)
+        .order_by(DatasetSource.slug)
     ).all()
     categories = session.scalars(
         select(BusinessCategory.slug)

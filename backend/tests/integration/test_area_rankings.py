@@ -36,10 +36,11 @@ def test_opportunity_map_and_rankings_use_exact_versioned_scope(db_session) -> N
                 text(
                     """
                     INSERT INTO administrative_areas (
-                        dataset_source_id, source_record_id, name, area_type,
+                        data_release_id, dataset_source_id, source_record_id, name, area_type,
                         population, population_density, retrieved_at,
                         original_properties, geom
                     ) VALUES (
+                        (SELECT id FROM data_releases WHERE status = 'active'),
                         :source_id, :source_record_id, :name, 'kelurahan',
                         12000, 15000, now(), '{}'::jsonb,
                         ST_Multi(ST_MakeEnvelope(
@@ -68,10 +69,11 @@ def test_opportunity_map_and_rankings_use_exact_versioned_scope(db_session) -> N
             text(
                 """
                 INSERT INTO opportunity_scores (
-                    administrative_area_id, category_id, radius_m,
+                    data_release_id, administrative_area_id, category_id, radius_m,
                     dataset_fingerprint, scoring_version, final_score, label,
                     raw_factors, normalized_factors
                 ) VALUES (
+                    (SELECT id FROM data_releases WHERE status = 'active'),
                     :area_id, :category_id, 1000, :fingerprint, 'v1.0.0',
                     :score, :label, '{"competition": 2}'::jsonb,
                     jsonb_build_object('competition', :score)

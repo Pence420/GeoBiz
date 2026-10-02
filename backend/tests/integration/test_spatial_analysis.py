@@ -29,14 +29,19 @@ def test_radius_includes_point_on_boundary(db_session) -> None:
         text(
             """
             INSERT INTO businesses (
-                category_id, dataset_source_id, name, source_type,
-                source_record_id, retrieved_at, original_tags, geom
+                data_release_id, category_id, dataset_source_id, name, source_type,
+                source_record_id, business_subtype, taxonomy_version,
+                retrieved_at, original_tags, geom
             ) VALUES
-                (:category_id, :source_id, 'exactly 1km', 'node', 'edge', now(),
+                ((SELECT id FROM data_releases WHERE status = 'active'),
+                 :category_id, :source_id, 'exactly 1km', 'node', 'edge',
+                 'restaurant', 'v1.0.0', now(),
                  '{}'::jsonb,
                  ST_Project(ST_SetSRID(ST_Point(0, 0), 4326)::geography,
                             1000, radians(90))::geometry),
-                (:category_id, :source_id, 'outside 1km', 'node', 'outside', now(),
+                ((SELECT id FROM data_releases WHERE status = 'active'),
+                 :category_id, :source_id, 'outside 1km', 'node', 'outside',
+                 'restaurant', 'v1.0.0', now(),
                  '{}'::jsonb,
                  ST_Project(ST_SetSRID(ST_Point(0, 0), 4326)::geography,
                             1001, radians(90))::geometry)
@@ -58,9 +63,10 @@ def test_st_covers_includes_administrative_boundary_edge(db_session) -> None:
         text(
             """
             INSERT INTO administrative_areas (
-                dataset_source_id, source_record_id, official_code, name,
+                data_release_id, dataset_source_id, source_record_id, official_code, name,
                 area_type, retrieved_at, original_properties, geom
             ) VALUES (
+                (SELECT id FROM data_releases WHERE status = 'active'),
                 :source_id, 'test/1', 'TEST', 'Test Coverage', 'province', now(),
                 '{}'::jsonb,
                 ST_Multi(ST_GeomFromText(

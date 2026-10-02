@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.api.contracts import GeoJsonFeature, GeoJsonFeatureCollection
 from app.areas.contracts import AreaRankingItem, AreaRankingResponse
-from app.datasets.service import current_dataset_fingerprint
+from app.datasets.service import active_release_id, current_dataset_fingerprint
 
 
 class OpportunityScoresUnavailableError(LookupError):
@@ -25,6 +25,7 @@ def opportunity_map(
     scoring_version: str = "v1.0.0",
 ) -> GeoJsonFeatureCollection:
     fingerprint = current_dataset_fingerprint(session)
+    release_id = active_release_id(session)
     rows = session.execute(
         text(
             """
@@ -48,6 +49,8 @@ def opportunity_map(
                 JOIN administrative_areas AS area
                   ON area.id = score.administrative_area_id
                 WHERE category.slug = :category_slug
+                  AND score.data_release_id = :release_id
+                  AND area.data_release_id = :release_id
                   AND score.radius_m = :radius_m
                   AND score.dataset_fingerprint = :fingerprint
                   AND score.scoring_version = :scoring_version
@@ -76,6 +79,7 @@ def opportunity_map(
         ),
         {
             "category_slug": category_slug,
+            "release_id": release_id,
             "radius_m": radius_m,
             "fingerprint": fingerprint,
             "scoring_version": scoring_version,
@@ -124,6 +128,7 @@ def area_rankings(
     scoring_version: str = "v1.0.0",
 ) -> AreaRankingResponse:
     fingerprint = current_dataset_fingerprint(session)
+    release_id = active_release_id(session)
     rows = session.execute(
         text(
             """
@@ -145,6 +150,8 @@ def area_rankings(
             JOIN administrative_areas AS area
               ON area.id = score.administrative_area_id
             WHERE category.slug = :category_slug
+              AND score.data_release_id = :release_id
+              AND area.data_release_id = :release_id
               AND score.radius_m = :radius_m
               AND score.dataset_fingerprint = :fingerprint
               AND score.scoring_version = :scoring_version
@@ -154,6 +161,7 @@ def area_rankings(
         ),
         {
             "category_slug": category_slug,
+            "release_id": release_id,
             "radius_m": radius_m,
             "fingerprint": fingerprint,
             "scoring_version": scoring_version,

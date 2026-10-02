@@ -13,6 +13,7 @@ from app.db.models import (
     AdministrativeArea,
     Business,
     BusinessCategory,
+    DataReleaseSource,
     DatasetSource,
     ImportRun,
     Poi,
@@ -37,6 +38,7 @@ class DuplicateSourceRecordError(ValueError):
 
 def promote_gtfs_stops(
     session: Session,
+    release_id: int,
     manifest: ImportManifest,
     records: Sequence[GtfsStopRecord],
     report: GtfsQualityReport,
@@ -47,29 +49,19 @@ def promote_gtfs_stops(
         raise ImportQualityError("GTFS quality report does not match staged records")
 
     with session.begin_nested():
-        source = session.scalar(
-            select(DatasetSource).where(DatasetSource.slug == manifest.dataset_slug)
+        source = _get_or_create_dataset_source(
+            session,
+            manifest,
+            provider="PT Transportasi Jakarta",
+            attribution="GTFS Static Transjakarta © PT Transportasi Jakarta",
         )
-        if source is None:
-            source = DatasetSource(
-                slug=manifest.dataset_slug,
-                provider="PT Transportasi Jakarta",
-                source_url=str(manifest.source_url),
-                license_name=manifest.source_license,
-                attribution="GTFS Static Transjakarta © PT Transportasi Jakarta",
-                observed_at=manifest.source_observed_at,
-                retrieved_at=manifest.retrieved_at,
-                sha256=manifest.sha256,
-            )
-            session.add(source)
-            session.flush()
-        else:
-            source.observed_at = manifest.source_observed_at
-            source.retrieved_at = manifest.retrieved_at
-            source.sha256 = manifest.sha256
+        _associate_source(session, release_id, source.id, manifest.dataset_slug)
 
         session.execute(
-            delete(TransportStop).where(TransportStop.dataset_source_id == source.id)
+            delete(TransportStop).where(
+                TransportStop.data_release_id == release_id,
+                TransportStop.dataset_source_id == source.id,
+            )
         )
         by_source_id: dict[str, TransportStop] = {}
         ordered_records = sorted(
@@ -77,6 +69,7 @@ def promote_gtfs_stops(
         )
         for record in ordered_records:
             stop = TransportStop(
+                data_release_id=release_id,
                 dataset_source_id=source.id,
                 name=record.name,
                 transport_type=record.transport_type,
@@ -108,6 +101,7 @@ def promote_gtfs_stops(
 
 def promote_osm_context(
     session: Session,
+    release_id: int,
     manifest: ImportManifest,
     pois: Sequence[OsmPoiRecord],
     roads: Sequence[OsmRoadRecord],
@@ -119,38 +113,35 @@ def promote_osm_context(
         raise ImportQualityError("OSM context report does not match staged records")
 
     with session.begin_nested():
-        source = session.scalar(
-            select(DatasetSource).where(DatasetSource.slug == manifest.dataset_slug)
+        source = _get_or_create_dataset_source(
+            session,
+            manifest,
+            provider="OpenStreetMap",
+            attribution="© OpenStreetMap contributors",
         )
-        if source is None:
-            source = DatasetSource(
-                slug=manifest.dataset_slug,
-                provider="OpenStreetMap",
-                source_url=str(manifest.source_url),
-                license_name=manifest.source_license,
-                attribution="© OpenStreetMap contributors",
-                observed_at=manifest.source_observed_at,
-                retrieved_at=manifest.retrieved_at,
-                sha256=manifest.sha256,
-            )
-            session.add(source)
-            session.flush()
-        else:
-            source.observed_at = manifest.source_observed_at
-            source.retrieved_at = manifest.retrieved_at
-            source.sha256 = manifest.sha256
+        _associate_source(session, release_id, source.id, manifest.dataset_slug)
 
-        session.execute(delete(Poi).where(Poi.dataset_source_id == source.id))
-        session.execute(delete(Road).where(Road.dataset_source_id == source.id))
+        session.execute(
+            delete(Poi).where(
+                Poi.data_release_id == release_id,
+                Poi.dataset_source_id == source.id,
+            )
+        )
+        session.execute(
+            delete(Road).where(
+                Road.data_release_id == release_id,
+                Road.dataset_source_id == source.id,
+            )
+        )
         if pois:
             session.execute(
                 text(
                     """
                     INSERT INTO pois (
-                        dataset_source_id, name, poi_type, source_type,
+                        data_release_id, dataset_source_id, name, poi_type, source_type,
                         source_record_id, retrieved_at, original_tags, geom
                     ) VALUES (
-                        :dataset_source_id, :name, :poi_type, :source_type,
+                        :data_release_id, :dataset_source_id, :name, :poi_type, :source_type,
                         :source_record_id, :retrieved_at, CAST(:tags AS jsonb),
                         ST_SetSRID(ST_GeomFromGeoJSON(:geometry), 4326)
                     )
@@ -158,6 +149,7 @@ def promote_osm_context(
                 ),
                 [
                     {
+                        "data_release_id": release_id,
                         "dataset_source_id": source.id,
                         "name": record.name,
                         "poi_type": record.poi_type,
@@ -175,10 +167,10 @@ def promote_osm_context(
                 text(
                     """
                     INSERT INTO roads (
-                        dataset_source_id, name, road_type, source_type,
+                        data_release_id, dataset_source_id, name, road_type, source_type,
                         source_record_id, retrieved_at, original_tags, geom
                     ) VALUES (
-                        :dataset_source_id, :name, :road_type, :source_type,
+                        :data_release_id, :dataset_source_id, :name, :road_type, :source_type,
                         :source_record_id, :retrieved_at, CAST(:tags AS jsonb),
                         ST_Multi(ST_SetSRID(ST_GeomFromGeoJSON(:geometry), 4326))
                     )
@@ -186,6 +178,7 @@ def promote_osm_context(
                 ),
                 [
                     {
+                        "data_release_id": release_id,
                         "dataset_source_id": source.id,
                         "name": record.name,
                         "road_type": record.road_type,
@@ -212,6 +205,7 @@ def promote_osm_context(
 
 def promote_population_areas(
     session: Session,
+    release_id: int,
     population_manifest: ImportManifest,
     geometry_manifest: ImportManifest,
     records: Sequence[JoinedKelurahan],
@@ -223,20 +217,27 @@ def promote_population_areas(
         raise ImportQualityError("population report does not match joined areas")
 
     with session.begin_nested():
-        geometry_source = _upsert_dataset_source(
+        geometry_source = _get_or_create_dataset_source(
             session,
             geometry_manifest,
             provider="OpenStreetMap",
             attribution="© OpenStreetMap contributors",
         )
-        population_source = _upsert_dataset_source(
+        population_source = _get_or_create_dataset_source(
             session,
             population_manifest,
             provider="Satu Data Jakarta / Dukcapil DKI Jakarta",
             attribution="Satu Data Jakarta — population period 2025",
         )
+        _associate_source(
+            session, release_id, geometry_source.id, geometry_manifest.dataset_slug
+        )
+        _associate_source(
+            session, release_id, population_source.id, population_manifest.dataset_slug
+        )
         session.execute(
             delete(AdministrativeArea).where(
+                AdministrativeArea.data_release_id == release_id,
                 AdministrativeArea.dataset_source_id == geometry_source.id
             )
         )
@@ -244,11 +245,11 @@ def promote_population_areas(
             text(
                 """
                 INSERT INTO administrative_areas (
-                    dataset_source_id, source_record_id, official_code, name,
+                    data_release_id, dataset_source_id, source_record_id, official_code, name,
                     area_type, population, population_density, observed_at,
                     retrieved_at, original_properties, geom
                 ) VALUES (
-                    :dataset_source_id, :source_record_id, NULL, :name,
+                    :data_release_id, :dataset_source_id, :source_record_id, NULL, :name,
                     'kelurahan', :population, NULL, :observed_at,
                     :retrieved_at, CAST(:properties AS jsonb),
                     ST_Multi(ST_SetSRID(ST_GeomFromGeoJSON(:geometry), 4326))
@@ -257,6 +258,7 @@ def promote_population_areas(
             ),
             [
                 {
+                    "data_release_id": release_id,
                     "dataset_source_id": geometry_source.id,
                     "source_record_id": record.source_record_id,
                     "name": record.name,
@@ -284,10 +286,11 @@ def promote_population_areas(
                     ST_Area(geom::geography) / 1000000.0,
                     0
                 )
-                WHERE dataset_source_id = :source_id
+                WHERE data_release_id = :release_id
+                  AND dataset_source_id = :source_id
                 """
             ),
-            {"source_id": geometry_source.id},
+            {"release_id": release_id, "source_id": geometry_source.id},
         )
         run = ImportRun(
             dataset_source_id=population_source.id,
@@ -304,7 +307,7 @@ def promote_population_areas(
         return run.id
 
 
-def _upsert_dataset_source(
+def _get_or_create_dataset_source(
     session: Session,
     manifest: ImportManifest,
     *,
@@ -312,7 +315,10 @@ def _upsert_dataset_source(
     attribution: str,
 ) -> DatasetSource:
     source = session.scalar(
-        select(DatasetSource).where(DatasetSource.slug == manifest.dataset_slug)
+        select(DatasetSource).where(
+            DatasetSource.slug == manifest.dataset_slug,
+            DatasetSource.sha256 == manifest.sha256,
+        )
     )
     if source is None:
         source = DatasetSource(
@@ -327,19 +333,39 @@ def _upsert_dataset_source(
         )
         session.add(source)
         session.flush()
-    else:
-        source.provider = provider
-        source.source_url = str(manifest.source_url)
-        source.license_name = manifest.source_license
-        source.attribution = attribution
-        source.observed_at = manifest.source_observed_at
-        source.retrieved_at = manifest.retrieved_at
-        source.sha256 = manifest.sha256
     return source
+
+
+def _associate_source(
+    session: Session,
+    release_id: int,
+    source_id: int,
+    role: str,
+) -> None:
+    existing = session.scalar(
+        select(DataReleaseSource).where(
+            DataReleaseSource.data_release_id == release_id,
+            DataReleaseSource.role == role,
+        )
+    )
+    if existing is None:
+        session.add(
+            DataReleaseSource(
+                data_release_id=release_id,
+                dataset_source_id=source_id,
+                role=role,
+            )
+        )
+        session.flush()
+    elif existing.dataset_source_id != source_id:
+        raise ImportQualityError(
+            f"release role {role} is already bound to a different source snapshot"
+        )
 
 
 def promote_dki_boundary(
     session: Session,
+    release_id: int,
     manifest: ImportManifest,
     payload: Mapping[str, Any],
 ) -> int:
@@ -355,33 +381,22 @@ def promote_dki_boundary(
     area_name = str(properties.get("name", "Daerah Khusus Ibukota Jakarta"))
 
     with session.begin_nested():
-        source = session.scalar(
-            select(DatasetSource).where(DatasetSource.slug == manifest.dataset_slug)
+        source = _get_or_create_dataset_source(
+            session,
+            manifest,
+            provider="OpenStreetMap",
+            attribution="© OpenStreetMap contributors",
         )
-        if source is None:
-            source = DatasetSource(
-                slug=manifest.dataset_slug,
-                provider="OpenStreetMap",
-                source_url=str(manifest.source_url),
-                license_name=manifest.source_license,
-                attribution="© OpenStreetMap contributors",
-                observed_at=manifest.source_observed_at,
-                retrieved_at=manifest.retrieved_at,
-                sha256=manifest.sha256,
-            )
-            session.add(source)
-            session.flush()
-        else:
-            source.observed_at = manifest.source_observed_at
-            source.retrieved_at = manifest.retrieved_at
-            source.sha256 = manifest.sha256
+        _associate_source(session, release_id, source.id, manifest.dataset_slug)
 
         session.execute(
             delete(AdministrativeArea).where(
+                AdministrativeArea.data_release_id == release_id,
                 AdministrativeArea.dataset_source_id == source.id
             )
         )
         area = AdministrativeArea(
+            data_release_id=release_id,
             dataset_source_id=source.id,
             source_record_id=f"{source_type}/{source_id}",
             official_code="ID-JK",
@@ -419,6 +434,7 @@ def promote_dki_boundary(
 
 def promote_osm_records(
     session: Session,
+    release_id: int,
     manifest: ImportManifest,
     records: Sequence[OsmBusinessRecord],
     report: ImportQualityReport,
@@ -427,28 +443,13 @@ def promote_osm_records(
     assert_demo_quality(report)
 
     with session.begin_nested():
-        source = session.scalar(
-            select(DatasetSource).where(DatasetSource.slug == manifest.dataset_slug)
+        source = _get_or_create_dataset_source(
+            session,
+            manifest,
+            provider="OpenStreetMap",
+            attribution="© OpenStreetMap contributors",
         )
-        if source is None:
-            source = DatasetSource(
-                slug=manifest.dataset_slug,
-                provider="OpenStreetMap",
-                source_url=str(manifest.source_url),
-                license_name=manifest.source_license,
-                attribution="© OpenStreetMap contributors",
-                observed_at=manifest.source_observed_at,
-                retrieved_at=manifest.retrieved_at,
-                sha256=manifest.sha256,
-            )
-            session.add(source)
-            session.flush()
-        else:
-            source.source_url = str(manifest.source_url)
-            source.license_name = manifest.source_license
-            source.observed_at = manifest.source_observed_at
-            source.retrieved_at = manifest.retrieved_at
-            source.sha256 = manifest.sha256
+        _associate_source(session, release_id, source.id, manifest.dataset_slug)
 
         category_ids = dict(
             session.execute(
@@ -466,15 +467,21 @@ def promote_osm_records(
             )
 
         session.execute(
-            delete(Business).where(Business.dataset_source_id == source.id)
+            delete(Business).where(
+                Business.data_release_id == release_id,
+                Business.dataset_source_id == source.id,
+            )
         )
         session.add_all(
             Business(
+                data_release_id=release_id,
                 category_id=category_ids[record.category_slug],
                 dataset_source_id=source.id,
                 name=record.name,
                 source_type=record.identity.source_type,
                 source_record_id=record.identity.source_record_id,
+                business_subtype=record.business_subtype,
+                taxonomy_version=record.taxonomy_version,
                 source_observed_at=manifest.source_observed_at,
                 retrieved_at=manifest.retrieved_at,
                 original_tags=record.tags,

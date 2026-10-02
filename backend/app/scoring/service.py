@@ -1,6 +1,7 @@
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.datasets.service import active_release_id
 from app.db.models import BusinessCategory, NormalizationProfile, ScoringWeight
 from app.scoring.domain import NormalizationProfileData, ScoreResult, score_location
 
@@ -18,6 +19,7 @@ def score_with_stored_profile(
     raw_factors: dict[str, float | None],
     scoring_version: str = "v1.0.0",
 ) -> ScoreResult:
+    release_id = active_release_id(session)
     category = session.scalar(
         select(BusinessCategory).where(BusinessCategory.slug == category_slug)
     )
@@ -25,6 +27,7 @@ def score_with_stored_profile(
         raise ScoringProfileUnavailableError("business category is unavailable")
     profile = session.scalar(
         select(NormalizationProfile).where(
+            NormalizationProfile.data_release_id == release_id,
             NormalizationProfile.category_id == category.id,
             NormalizationProfile.radius_m == radius_m,
             NormalizationProfile.dataset_fingerprint == dataset_fingerprint,

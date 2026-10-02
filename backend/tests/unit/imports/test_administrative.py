@@ -8,7 +8,9 @@ def _record(record_id: str, longitude: float, latitude: float) -> OsmBusinessRec
         identity=SourceIdentity(
             provider="osm", source_type="node", source_record_id=record_id
         ),
-        category_slug="restaurant",
+        category_slug="fnb",
+        business_subtype="restaurant",
+        taxonomy_version="v2.0.0",
         name="Real source name",
         longitude=longitude,
         latitude=latitude,
