@@ -1,0 +1,60 @@
+{
+  "taxonomy_version": "v2.0.0",
+  "scoring_version": "v2.0.0",
+  "minimum_free_bytes": 2000000000,
+  "workspace_root": "/data/refresh",
+  "tile_root": "/data/tiles/releases",
+  "aliases_path": "/data/crosswalks/dki_kelurahan_aliases.csv",
+  "sources": [
+    {
+      "role": "osm",
+      "dataset_slug": "osm-jakarta",
+      "source_name": "OpenStreetMap Jakarta daily extract",
+      "url": "https://download.openstreetmap.fr/extracts/asia/indonesia/jakarta.osm.pbf",
+      "allowed_hosts": ["download.openstreetmap.fr"],
+      "license_name": "Open Database License (ODbL) 1.0",
+      "filename": "jakarta.osm.pbf",
+      "max_bytes": 536870912
+    },
+    {
+      "role": "boundary",
+      "dataset_slug": "osm-dki-boundary",
+      "source_name": "OpenStreetMap DKI Jakarta administrative boundary via Nominatim",
+      "url": "https://nominatim.openstreetmap.org/search?format=geojson&polygon_geojson=1&countrycodes=id&limit=1&q=Daerah%20Khusus%20Ibukota%20Jakarta",
+      "allowed_hosts": ["nominatim.openstreetmap.org"],
+      "license_name": "Open Database License (ODbL) 1.0",
+      "filename": "dki-boundary.geojson",
+      "max_bytes": 10485760
+    },
+    {
+      "role": "gtfs",
+      "dataset_slug": "transjakarta-gtfs",
+      "source_name": "GTFS Static Transjakarta",
+      "url": "https://gtfs.transjakarta.co.id/files/file_gtfs.zip",
+      "allowed_hosts": ["gtfs.transjakarta.co.id"],
+      "license_name": "Creative Commons Attribution 4.0 International (CC BY 4.0)",
+      "filename": "transjakarta-gtfs.zip",
+      "max_bytes": 268435456
+    },
+    {
+      "role": "population",
+      "dataset_slug": "satudata-dki-population-2025",
+      "source_name": "Data Penduduk Provinsi DKI Jakarta Menurut Jenis Kelamin dan Rasio Jenis Kelamin",
+      "url": "https://satudata.jakarta.go.id/backend/api/v2/satudata/get-table-data?page_url=data-penduduk-provinsi-dki-jakarta-menurut-jenis-kelamin-dan-rasio-jenis-kelamin&periode_data=2025&per_page=5000",
+      "allowed_hosts": ["satudata.jakarta.go.id"],
+      "license_name": "Satu Data Jakarta public open data",
+      "filename": "dki-population-2025.json",
+      "max_bytes": 67108864,
+      "observed_at": "2025-12-31",
+      "request_parameters": {
+        "page_url": "data-penduduk-provinsi-dki-jakarta-menurut-jenis-kelamin-dan-rasio-jenis-kelamin",
+        "periode_data": "2025",
+        "per_page": 5000,
+        "publisher_sources": [
+          "Kementerian Dalam Negeri",
+          "Dinas Kependudukan dan Pencatatan Sipil DKI Jakarta"
+        ]
+      }
+    }
+  ]
+}

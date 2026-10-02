@@ -2,7 +2,10 @@ import json
 import argparse
 from pathlib import Path
 
+from sqlalchemy import select
+
 from app.db.session import SessionLocal
+from app.db.models import DataRelease
 from app.datasets.service import active_release_id
 from app.imports.manifest import load_verified_manifest
 from app.imports.administrative import boundary_geometry
@@ -23,6 +26,11 @@ from app.imports.staging import (
 )
 from app.scoring.generator import generate_normalization_profiles
 from app.areas.generator import generate_opportunity_scores
+from app.refresh.config import RefreshConfig
+from app.refresh.orchestrator import RefreshOrchestrator, build_default_hooks
+from app.releases.service import fail_release, rollback_release
+
+DEFAULT_REFRESH_CONFIG = Path("/data/sources/geobiz-v2.json")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -90,6 +98,36 @@ def build_parser() -> argparse.ArgumentParser:
 
     report = commands.add_parser("report", help="print a quality report")
     report.add_argument("path", type=Path)
+
+    refresh_prepare = commands.add_parser(
+        "refresh-prepare", help="download, validate, and prepare an isolated release"
+    )
+    refresh_prepare.add_argument("--release-key", required=True)
+    refresh_prepare.add_argument("--config", type=Path, default=DEFAULT_REFRESH_CONFIG)
+    refresh_prepare.add_argument("--dry-run", action="store_true")
+    refresh_prepare.add_argument("--accept-count-change", action="store_true")
+
+    refresh_activate = commands.add_parser(
+        "refresh-activate", help="derive and atomically activate a prepared release"
+    )
+    refresh_activate.add_argument("--release-key", required=True)
+    refresh_activate.add_argument("--tile", type=Path, required=True)
+    refresh_activate.add_argument("--config", type=Path, default=DEFAULT_REFRESH_CONFIG)
+
+    refresh_fail = commands.add_parser(
+        "refresh-fail", help="record failure for an incomplete prepared release"
+    )
+    refresh_fail.add_argument("--release-key", required=True)
+    refresh_fail.add_argument("--phase", required=True)
+    refresh_fail.add_argument("--message", required=True)
+
+    commands.add_parser("refresh-status", help="print release lifecycle status")
+
+    rollback = commands.add_parser(
+        "rollback-release", help="reactivate the immediately previous healthy release"
+    )
+    rollback.add_argument("release_key")
+    rollback.add_argument("--tile-root", type=Path, default=Path("/data/tiles/releases"))
     return parser
 
 
@@ -246,7 +284,105 @@ def main() -> None:
         print(json.dumps(summary, indent=2))
         return
 
+    if args.command == "refresh-prepare":
+        orchestrator = RefreshOrchestrator(
+            RefreshConfig.load(args.config), build_default_hooks()
+        )
+        with SessionLocal() as session:
+            result = orchestrator.prepare(
+                session,
+                release_key=args.release_key,
+                dry_run=args.dry_run,
+                accept_count_change=args.accept_count_change,
+            )
+            session.commit()
+        print(result.model_dump_json(indent=2))
+        return
+
+    if args.command == "refresh-activate":
+        orchestrator = RefreshOrchestrator(
+            RefreshConfig.load(args.config), build_default_hooks()
+        )
+        with SessionLocal() as session:
+            release = orchestrator.activate(
+                session, release_key=args.release_key, tile_path=args.tile
+            )
+            payload = _release_payload(release)
+            session.commit()
+        print(json.dumps(payload, indent=2))
+        return
+
+    if args.command == "refresh-fail":
+        with SessionLocal() as session:
+            release = session.scalar(
+                select(DataRelease).where(DataRelease.release_key == args.release_key)
+            )
+            if release is None:
+                raise ValueError(f"release {args.release_key!r} does not exist")
+            if release.status != "failed":
+                release = fail_release(
+                    session, release.id, phase=args.phase, message=args.message
+                )
+            payload = _release_payload(release)
+            session.commit()
+        print(json.dumps(payload, indent=2))
+        return
+
+    if args.command == "refresh-status":
+        with SessionLocal() as session:
+            rows = session.scalars(
+                select(DataRelease).order_by(DataRelease.created_at.desc())
+            ).all()
+        payload = {
+            "active": next(
+                (_release_payload(row) for row in rows if row.status == "active"), None
+            ),
+            "pending": next(
+                (
+                    _release_payload(row)
+                    for row in rows
+                    if row.status in {"staging", "validated"}
+                ),
+                None,
+            ),
+            "latest_failed": next(
+                (_release_payload(row) for row in rows if row.status == "failed"), None
+            ),
+        }
+        print(json.dumps(payload, indent=2))
+        return
+
+    if args.command == "rollback-release":
+        with SessionLocal() as session:
+            release = rollback_release(
+                session, args.release_key, tile_root=args.tile_root
+            )
+            payload = _release_payload(release)
+            session.commit()
+        print(json.dumps(payload, indent=2))
+        return
+
     print(args.path.read_text(encoding="utf-8"), end="")
+
+
+def _release_payload(release: DataRelease) -> dict:
+    return {
+        "id": release.id,
+        "release_key": release.release_key,
+        "status": release.status,
+        "dataset_fingerprint": release.dataset_fingerprint,
+        "taxonomy_version": release.taxonomy_version,
+        "scoring_version": release.scoring_version,
+        "tile_filename": release.tile_filename,
+        "tile_sha256": release.tile_sha256,
+        "failure": release.failure,
+        "validated_at": (
+            release.validated_at.isoformat() if release.validated_at else None
+        ),
+        "activated_at": (
+            release.activated_at.isoformat() if release.activated_at else None
+        ),
+    }
 
 
 if __name__ == "__main__":
