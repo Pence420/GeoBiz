@@ -28,10 +28,14 @@ from app.db.models import (
     Business,
     BusinessCategory,
     DataReleaseSource,
+    DataRelease,
     DatasetSource,
 )
 from app.db.session import get_session
 from app.scoring.service import ScoringProfileUnavailableError
+from app.releases.contracts import MapConfig, RefreshStatusResponse, ReleaseSummary
+from app.datasets.service import active_release
+from app.taxonomy.businesses import BusinessCategorySlug
 
 router = APIRouter(prefix="/api")
 
@@ -49,6 +53,11 @@ def _validate_bbox(*, west: float, south: float, east: float, north: float) -> N
 @router.get("/business-categories", response_model=list[CategorySummary])
 @router.get("/categories", response_model=list[CategorySummary], include_in_schema=False)
 def list_categories(session: Annotated[Session, Depends(get_session)]):
+    if active_release(session).taxonomy_version != "v2.0.0":
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "V2_RELEASE_REQUIRED", "message": "GeoBiz v2 data is not active"},
+        )
     release_id = active_release_id(session)
     rows = session.execute(
         select(
@@ -74,7 +83,7 @@ def list_categories(session: Annotated[Session, Depends(get_session)]):
 @router.get("/businesses", response_model=GeoJsonFeatureCollection)
 def list_businesses(
     session: Annotated[Session, Depends(get_session)],
-    category: Literal["restaurant", "gym", "pharmacy"] | None = None,
+    category: BusinessCategorySlug | None = None,
     west: Annotated[float, Query(ge=-180, le=180)] = 106.45,
     south: Annotated[float, Query(ge=-90, le=90)] = -6.38,
     east: Annotated[float, Query(ge=-180, le=180)] = 106.98,
@@ -92,6 +101,25 @@ def list_businesses(
                 category.slug AS category,
                 business.source_type,
                 business.source_record_id,
+                business.business_subtype,
+                business.taxonomy_version,
+                business.original_tags ->> 'brand' AS brand,
+                business.original_tags ->> 'operator' AS operator,
+                business.original_tags ->> 'opening_hours' AS opening_hours,
+                coalesce(
+                    business.original_tags ->> 'contact:phone',
+                    business.original_tags ->> 'phone'
+                ) AS phone,
+                coalesce(
+                    business.original_tags ->> 'contact:website',
+                    business.original_tags ->> 'website'
+                ) AS website,
+                nullif(concat_ws(', ',
+                    business.original_tags ->> 'addr:housenumber',
+                    business.original_tags ->> 'addr:street',
+                    business.original_tags ->> 'addr:suburb',
+                    business.original_tags ->> 'addr:city'
+                ), '') AS address,
                 ST_AsGeoJSON(business.geom)::json AS geometry
             FROM businesses AS business
             JOIN business_categories AS category ON category.id = business.category_id
@@ -130,6 +158,14 @@ def list_businesses(
                 "category": row["category"],
                 "source_type": row["source_type"],
                 "source_record_id": row["source_record_id"],
+                "business_subtype": row["business_subtype"],
+                "taxonomy_version": row["taxonomy_version"],
+                "address": row["address"],
+                "brand": row["brand"],
+                "operator": row["operator"],
+                "opening_hours": row["opening_hours"],
+                "phone": row["phone"],
+                "website": row["website"],
             },
         )
         for row in rows
@@ -345,7 +381,7 @@ def area_alias(
 )
 def get_opportunity_map(
     session: Annotated[Session, Depends(get_session)],
-    business_category: Literal["restaurant", "gym", "pharmacy"],
+    business_category: BusinessCategorySlug,
     radius_m: Annotated[int, Query()] = 1000,
     west: Annotated[float, Query(ge=-180, le=180)] = 106.45,
     south: Annotated[float, Query(ge=-90, le=90)] = -6.38,
@@ -379,7 +415,7 @@ def get_opportunity_map(
 )
 def get_area_rankings(
     session: Annotated[Session, Depends(get_session)],
-    business_category: Literal["restaurant", "gym", "pharmacy"],
+    business_category: BusinessCategorySlug,
     radius_m: Annotated[int, Query()] = 1000,
     limit: Annotated[int, Query(ge=1, le=267)] = 10,
 ):
@@ -438,7 +474,7 @@ def analyze_location(
 )
 def get_analytics(
     session: Annotated[Session, Depends(get_session)],
-    business_category: Literal["restaurant", "gym", "pharmacy"] = "restaurant",
+    business_category: BusinessCategorySlug = "fnb",
     radius_m: int = 1000,
 ):
     if radius_m not in SUPPORTED_RADII:
@@ -466,6 +502,61 @@ def search_locations(
     limit: Annotated[int, Query(ge=1, le=20)] = 8,
 ):
     return search(session, query=q, limit=limit)
+
+
+@router.get("/map-config", response_model=MapConfig)
+def map_config(session: Annotated[Session, Depends(get_session)]) -> MapConfig:
+    release = active_release(session)
+    has_offline_tile = bool(release.tile_filename and release.tile_sha256)
+    return MapConfig(
+        release_id=release.id,
+        release_key=release.release_key,
+        taxonomy_version=release.taxonomy_version,
+        tile_url=(
+            f"/tiles/releases/{release.tile_filename}"
+            if release.tile_filename
+            else None
+        ),
+        tile_sha256=release.tile_sha256,
+        bounds=(106.45, -6.38, 106.98, -5.60),
+        min_zoom=7,
+        max_zoom=15,
+        attribution="© OpenStreetMap contributors",
+        mode="offline" if has_offline_tile else "online_fallback",
+        fallback_available=True,
+    )
+
+
+@router.get("/refresh-status", response_model=RefreshStatusResponse)
+def refresh_status(
+    session: Annotated[Session, Depends(get_session)],
+) -> RefreshStatusResponse:
+    active = active_release(session)
+    pending = session.scalar(
+        select(DataRelease)
+        .where(DataRelease.status.in_(("staging", "validated")))
+        .order_by(DataRelease.created_at.desc())
+        .limit(1)
+    )
+    latest_failed = session.scalar(
+        select(DataRelease)
+        .where(DataRelease.status == "failed")
+        .order_by(DataRelease.created_at.desc())
+        .limit(1)
+    )
+    return RefreshStatusResponse(
+        active=ReleaseSummary.model_validate(active, from_attributes=True),
+        pending=(
+            ReleaseSummary.model_validate(pending, from_attributes=True)
+            if pending is not None
+            else None
+        ),
+        latest_failed=(
+            ReleaseSummary.model_validate(latest_failed, from_attributes=True)
+            if latest_failed is not None
+            else None
+        ),
+    )
 
 
 @router.get("/datasets", response_model=list[DatasetSummary])

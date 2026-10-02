@@ -3,9 +3,16 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from app.taxonomy.businesses import BusinessCategorySlug
+
 
 class CategoryCount(BaseModel):
-    category: Literal["restaurant", "gym", "pharmacy"]
+    category: BusinessCategorySlug
+    count: int = Field(ge=0)
+
+
+class SubtypeCount(BaseModel):
+    subtype: str
     count: int = Field(ge=0)
 
 
@@ -39,11 +46,14 @@ class CoverageMetric(BaseModel):
 
 
 class AnalyticsResponse(BaseModel):
-    business_category: Literal["restaurant", "gym", "pharmacy"]
+    business_category: BusinessCategorySlug
     radius_m: int
+    release_key: str
+    taxonomy_version: str
     scoring_version: str
     dataset_fingerprint: str
     category_counts: list[CategoryCount]
+    subtype_counts: list[SubtypeCount]
     top_opportunities: list[OpportunitySummary]
     score_distribution: list[ScoreBand]
     population_competition: list[PopulationCompetitionPoint]
@@ -58,22 +68,33 @@ class MethodologyDataset(BaseModel):
     attribution: str
     observed_at: date | None
     retrieved_at: datetime
+    sha256: str
+
+
+class TaxonomyRule(BaseModel):
+    category: BusinessCategorySlug
+    subtype: str
+    required_tags: dict[str, str]
 
 
 class CategoryMethodology(BaseModel):
-    category: Literal["restaurant", "gym", "pharmacy"]
+    category: BusinessCategorySlug
     weights: dict[str, float]
 
 
 class MethodologyResponse(BaseModel):
     coverage: str
+    release_key: str
+    taxonomy_version: str
     scoring_version: str
     dataset_fingerprint: str
+    tile_sha256: str | None
     supported_radii_m: list[int]
     representative_area_method: str
     normalization: str
     factor_definitions: dict[str, str]
     categories: list[CategoryMethodology]
+    taxonomy_rules: list[TaxonomyRule]
     datasets: list[MethodologyDataset]
     limitations: list[str]
 

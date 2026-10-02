@@ -4,6 +4,7 @@ from sqlalchemy import text
 from app.datasets.service import current_dataset_fingerprint
 from app.db.session import get_session
 from app.main import app
+from app.releases.service import activate_release, create_staging_release
 
 
 def _client(db_session):
@@ -12,6 +13,18 @@ def _client(db_session):
 
 
 def test_opportunity_map_and_rankings_use_exact_versioned_scope(db_session) -> None:
+    release = create_staging_release(
+        db_session,
+        {
+            "release_key": "rankings-v2-test",
+            "dataset_fingerprint": "e" * 64,
+            "taxonomy_version": "v2.0.0",
+            "scoring_version": "v2.0.0",
+        },
+    )
+    release.status = "validated"
+    db_session.flush()
+    activate_release(db_session, release.id)
     source_id = db_session.scalar(
         text(
             """
@@ -58,7 +71,7 @@ def test_opportunity_map_and_rankings_use_exact_versioned_scope(db_session) -> N
             )
         )
     category_id = db_session.scalar(
-        text("SELECT id FROM business_categories WHERE slug = 'gym'")
+        text("SELECT id FROM business_categories WHERE slug = 'services'")
     )
     fingerprint = current_dataset_fingerprint(db_session)
     for area_id, score, label in (
@@ -74,7 +87,7 @@ def test_opportunity_map_and_rankings_use_exact_versioned_scope(db_session) -> N
                     raw_factors, normalized_factors
                 ) VALUES (
                     (SELECT id FROM data_releases WHERE status = 'active'),
-                    :area_id, :category_id, 1000, :fingerprint, 'v1.0.0',
+                    :area_id, :category_id, 1000, :fingerprint, 'v2.0.0',
                     :score, :label, '{"competition": 2}'::jsonb,
                     jsonb_build_object('competition', :score)
                 )
@@ -93,12 +106,12 @@ def test_opportunity_map_and_rankings_use_exact_versioned_scope(db_session) -> N
     try:
         ranking_response = client.get(
             "/api/area-rankings",
-            params={"business_category": "gym", "radius_m": 1000, "limit": 2},
+            params={"business_category": "services", "radius_m": 1000, "limit": 2},
         )
         map_response = client.get(
             "/api/opportunity-map",
             params={
-                "business_category": "gym",
+                "business_category": "services",
                 "radius_m": 1000,
                 "west": 9.9,
                 "south": 9.9,
@@ -109,7 +122,7 @@ def test_opportunity_map_and_rankings_use_exact_versioned_scope(db_session) -> N
         partial_map_response = client.get(
             "/api/opportunity-map",
             params={
-                "business_category": "gym",
+                "business_category": "services",
                 "radius_m": 1000,
                 "west": 9.99,
                 "south": 9.99,
@@ -139,7 +152,7 @@ def test_rankings_reject_unsupported_radius(db_session) -> None:
     try:
         response = _client(db_session).get(
             "/api/area-rankings",
-            params={"business_category": "restaurant", "radius_m": 750},
+            params={"business_category": "fnb", "radius_m": 750},
         )
     finally:
         app.dependency_overrides.clear()

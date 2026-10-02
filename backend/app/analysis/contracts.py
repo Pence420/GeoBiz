@@ -5,10 +5,7 @@ from pydantic import AliasChoices, BaseModel, Field
 
 from app.scoring.domain import ScoreResult
 from app.datasets.service import DatasetSnapshot
-
-BusinessCategorySlug = Literal[
-    "restaurant", "gym", "pharmacy", "fnb", "retail", "services"
-]
+from app.taxonomy.businesses import BusinessCategorySlug
 
 
 class AnalyzeLocationRequest(BaseModel):

@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.api.contracts import GeoJsonFeature, GeoJsonFeatureCollection
 from app.areas.contracts import AreaRankingItem, AreaRankingResponse
-from app.datasets.service import active_release_id, current_dataset_fingerprint
+from app.datasets.service import active_release
 
 
 class OpportunityScoresUnavailableError(LookupError):
@@ -22,10 +22,12 @@ def opportunity_map(
     south: float,
     east: float,
     north: float,
-    scoring_version: str = "v1.0.0",
+    scoring_version: str | None = None,
 ) -> GeoJsonFeatureCollection:
-    fingerprint = current_dataset_fingerprint(session)
-    release_id = active_release_id(session)
+    release = active_release(session)
+    fingerprint = release.dataset_fingerprint
+    release_id = release.id
+    scoring_version = scoring_version or release.scoring_version
     rows = session.execute(
         text(
             """
@@ -125,10 +127,12 @@ def area_rankings(
     category_slug: str,
     radius_m: int,
     limit: int,
-    scoring_version: str = "v1.0.0",
+    scoring_version: str | None = None,
 ) -> AreaRankingResponse:
-    fingerprint = current_dataset_fingerprint(session)
-    release_id = active_release_id(session)
+    release = active_release(session)
+    fingerprint = release.dataset_fingerprint
+    release_id = release.id
+    scoring_version = scoring_version or release.scoring_version
     rows = session.execute(
         text(
             """

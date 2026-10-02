@@ -2,6 +2,8 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from app.taxonomy.businesses import BusinessCategorySlug
+
 
 class AreaRankingItem(BaseModel):
     area_id: int
@@ -17,9 +19,8 @@ class AreaRankingItem(BaseModel):
 
 
 class AreaRankingResponse(BaseModel):
-    business_category: Literal["restaurant", "gym", "pharmacy"]
+    business_category: BusinessCategorySlug
     radius_m: int
     scoring_version: str
     dataset_fingerprint: str
     items: list[AreaRankingItem]
-

@@ -3,9 +3,11 @@ from typing import Any, Literal
 
 from pydantic import BaseModel
 
+from app.taxonomy.businesses import BusinessCategorySlug
+
 
 class CategorySummary(BaseModel):
-    slug: Literal["restaurant", "gym", "pharmacy"]
+    slug: BusinessCategorySlug
     name: str
     description: str | None
     business_count: int

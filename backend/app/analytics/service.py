@@ -12,15 +12,17 @@ from app.analytics.contracts import (
     PopulationCompetitionPoint,
     ScoreBand,
     SearchResult,
+    SubtypeCount,
+    TaxonomyRule,
 )
 from app.datasets.service import (
+    active_release,
     active_release_id,
-    current_dataset_fingerprint,
     list_dataset_snapshots,
 )
 from app.db.models import Business, BusinessCategory, ScoringWeight
+from app.taxonomy.businesses import BUSINESS_RULES
 
-SCORING_VERSION = "v1.0.0"
 SUPPORTED_RADII = [500, 1000, 2000, 3000, 5000]
 FACTOR_DEFINITIONS = {
     "population_density": "Official residents per square kilometre in the containing kelurahan.",
@@ -39,8 +41,9 @@ def analytics(
     category_slug: str,
     radius_m: int,
 ) -> AnalyticsResponse:
-    fingerprint = current_dataset_fingerprint(session)
-    release_id = active_release_id(session)
+    release = active_release(session)
+    fingerprint = release.dataset_fingerprint
+    release_id = release.id
     category_counts = [
         CategoryCount(category=row.slug, count=row.business_count)
         for row in session.execute(
@@ -60,11 +63,27 @@ def analytics(
             .order_by(BusinessCategory.id)
         ).mappings()
     ]
+    subtype_counts = [
+        SubtypeCount(subtype=row.business_subtype, count=row.business_count)
+        for row in session.execute(
+            select(
+                Business.business_subtype,
+                func.count(Business.id).label("business_count"),
+            )
+            .join(BusinessCategory, BusinessCategory.id == Business.category_id)
+            .where(
+                Business.data_release_id == release_id,
+                BusinessCategory.slug == category_slug,
+            )
+            .group_by(Business.business_subtype)
+            .order_by(func.count(Business.id).desc(), Business.business_subtype)
+        ).mappings()
+    ]
     parameters = {
         "category_slug": category_slug,
         "radius_m": radius_m,
         "fingerprint": fingerprint,
-        "scoring_version": SCORING_VERSION,
+        "scoring_version": release.scoring_version,
         "release_id": release_id,
     }
     rows = session.execute(
@@ -174,9 +193,12 @@ def analytics(
     return AnalyticsResponse(
         business_category=category_slug,
         radius_m=radius_m,
-        scoring_version=SCORING_VERSION,
+        release_key=release.release_key,
+        taxonomy_version=release.taxonomy_version,
+        scoring_version=release.scoring_version,
         dataset_fingerprint=fingerprint,
         category_counts=category_counts,
+        subtype_counts=subtype_counts,
         top_opportunities=[OpportunitySummary(**row) for row in rows[:10]],
         score_distribution=distribution,
         population_competition=[PopulationCompetitionPoint(**row) for row in rows],
@@ -185,7 +207,7 @@ def analytics(
 
 
 def methodology(session: Session) -> MethodologyResponse:
-    fingerprint = current_dataset_fingerprint(session)
+    release = active_release(session)
     weight_rows = session.execute(
         select(
             BusinessCategory.slug,
@@ -193,7 +215,10 @@ def methodology(session: Session) -> MethodologyResponse:
             ScoringWeight.weight,
         )
         .join(ScoringWeight, ScoringWeight.category_id == BusinessCategory.id)
-        .where(ScoringWeight.version == SCORING_VERSION)
+        .where(
+            ScoringWeight.version == release.scoring_version,
+            BusinessCategory.is_active.is_(True),
+        )
         .order_by(BusinessCategory.id, ScoringWeight.id)
     ).all()
     weights_by_category: dict[str, dict[str, float]] = {}
@@ -202,8 +227,11 @@ def methodology(session: Session) -> MethodologyResponse:
     datasets = list_dataset_snapshots(session)
     return MethodologyResponse(
         coverage="DKI Jakarta",
-        scoring_version=SCORING_VERSION,
-        dataset_fingerprint=fingerprint,
+        release_key=release.release_key,
+        taxonomy_version=release.taxonomy_version,
+        scoring_version=release.scoring_version,
+        dataset_fingerprint=release.dataset_fingerprint,
+        tile_sha256=release.tile_sha256,
         supported_radii_m=SUPPORTED_RADII,
         representative_area_method="ST_PointOnSurface: one guaranteed in-polygon observation per kelurahan.",
         normalization=(
@@ -216,8 +244,16 @@ def methodology(session: Session) -> MethodologyResponse:
             CategoryMethodology(category=category, weights=weights)
             for category, weights in weights_by_category.items()
         ],
+        taxonomy_rules=[
+            TaxonomyRule(
+                category=rule.classification.category_slug,
+                subtype=rule.classification.subtype,
+                required_tags=dict(rule.required_tags),
+            )
+            for rule in BUSINESS_RULES
+        ],
         datasets=[
-            MethodologyDataset(**snapshot.model_dump(exclude={"sha256"}))
+            MethodologyDataset(**snapshot.model_dump())
             for snapshot in datasets
         ],
         limitations=[

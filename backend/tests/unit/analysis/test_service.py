@@ -53,14 +53,14 @@ def test_point_outside_dki_is_rejected() -> None:
         repository=FakeRepository(None),
         score_provider=lambda **_kwargs: None,
         fingerprint_provider=lambda: "dataset-v1",
-        release_version_provider=lambda: ("v1.0.0", "v1.0.0"),
+        release_version_provider=lambda: ("v2.0.0", "v2.0.0"),
         snapshots_provider=lambda: [],
     )
 
     with pytest.raises(LocationOutsideCoverageError) as error:
         service.analyze(
             AnalyzeLocationRequest(
-                longitude=110, latitude=-7, business_category="restaurant"
+                longitude=110, latitude=-7, business_category="fnb"
             )
         )
 
@@ -80,7 +80,7 @@ def test_missing_source_metrics_are_forwarded_as_none_not_zero() -> None:
             normalized_factors={key: None for key in kwargs["raw_factors"]},
             weights={"population_density": 1.0},
             missing_factors=["population_density"],
-            scoring_version="v1.0.0",
+            scoring_version="v2.0.0",
             profile_id=1,
         )
 
@@ -95,13 +95,13 @@ def test_missing_source_metrics_are_forwarded_as_none_not_zero() -> None:
         ),
         score_provider=score_provider,
         fingerprint_provider=lambda: "dataset-v1",
-        release_version_provider=lambda: ("v1.0.0", "v1.0.0"),
+        release_version_provider=lambda: ("v2.0.0", "v2.0.0"),
         snapshots_provider=lambda: [],
     )
 
     response = service.analyze(
         AnalyzeLocationRequest(
-            longitude=106.8, latitude=-6.2, business_category="restaurant"
+            longitude=106.8, latitude=-6.2, business_category="fnb"
         )
     )
 
@@ -130,11 +130,11 @@ def test_granular_area_uses_parent_dki_coverage_code() -> None:
             normalized_factors={key: 50.0 for key in kwargs["raw_factors"]},
             weights={"competition": 1.0},
             missing_factors=[],
-            scoring_version="v1.0.0",
+            scoring_version="v2.0.0",
             profile_id=1,
         ),
         fingerprint_provider=lambda: "dataset-v1",
-        release_version_provider=lambda: ("v1.0.0", "v1.0.0"),
+        release_version_provider=lambda: ("v2.0.0", "v2.0.0"),
         snapshots_provider=lambda: [],
     )
 
@@ -142,7 +142,7 @@ def test_granular_area_uses_parent_dki_coverage_code() -> None:
         AnalyzeLocationRequest(
             longitude=106.8272,
             latitude=-6.1754,
-            business_category="restaurant",
+            business_category="fnb",
         )
     )
 

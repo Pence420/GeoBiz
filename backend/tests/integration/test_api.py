@@ -3,6 +3,7 @@ from sqlalchemy import text
 
 from app.db.session import get_session
 from app.main import app
+from app.releases.service import activate_release, create_staging_release
 
 
 def _client(db_session):
@@ -10,7 +11,23 @@ def _client(db_session):
     return TestClient(app)
 
 
+def _activate_v2(db_session) -> None:
+    release = create_staging_release(
+        db_session,
+        {
+            "release_key": "api-legacy-suite-v2",
+            "dataset_fingerprint": "b" * 64,
+            "taxonomy_version": "v2.0.0",
+            "scoring_version": "v2.0.0",
+        },
+    )
+    release.status = "validated"
+    db_session.flush()
+    activate_release(db_session, release.id)
+
+
 def test_businesses_returns_real_source_identity_as_geojson(db_session) -> None:
+    _activate_v2(db_session)
     source_id = db_session.scalar(
         text(
             """
@@ -25,7 +42,7 @@ def test_businesses_returns_real_source_identity_as_geojson(db_session) -> None:
         )
     )
     category_id = db_session.scalar(
-        text("SELECT id FROM business_categories WHERE slug = 'restaurant'")
+        text("SELECT id FROM business_categories WHERE slug = 'fnb'")
     )
     db_session.execute(
         text(
@@ -37,7 +54,7 @@ def test_businesses_returns_real_source_identity_as_geojson(db_session) -> None:
             ) VALUES (
                 (SELECT id FROM data_releases WHERE status = 'active'),
                 :category_id, :source_id, 'API Test Restaurant', 'node',
-                '987654321', 'restaurant', 'v1.0.0', now(),
+                '987654321', 'restaurant', 'v2.0.0', now(),
                 '{"name":"API Test Restaurant"}'::jsonb,
                 ST_SetSRID(ST_Point(106.82, -6.18), 4326)
             )
@@ -50,7 +67,7 @@ def test_businesses_returns_real_source_identity_as_geojson(db_session) -> None:
         response = _client(db_session).get(
             "/api/businesses",
             params={
-                "category": "restaurant",
+                "category": "fnb",
                 "west": 106.81,
                 "south": -6.19,
                 "east": 106.83,
@@ -91,7 +108,7 @@ def test_analyze_rejects_location_outside_dki(db_session) -> None:
             json={
                 "latitude": 0,
                 "longitude": 0,
-                "business_category": "gym",
+                "business_category": "services",
                 "radius_m": 1000,
             },
         )
