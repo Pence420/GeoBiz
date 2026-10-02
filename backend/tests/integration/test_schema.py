@@ -79,6 +79,61 @@ def test_v1_scoring_weights_sum_to_one_per_category(db_session: Session) -> None
     assert all(total == pytest.approx(1.0) for _, total in rows)
 
 
+def test_v2_scoring_weights_match_the_approved_spec(db_session: Session) -> None:
+    rows = db_session.execute(
+        text(
+            """
+            SELECT category.slug, scoring.factor_name, scoring.weight::float,
+                   scoring.is_required
+            FROM scoring_weights AS scoring
+            JOIN business_categories AS category ON category.id = scoring.category_id
+            WHERE scoring.version = 'v2.0.0'
+            ORDER BY category.slug, scoring.factor_name
+            """
+        )
+    ).all()
+    actual = {
+        (category, factor): (weight, required)
+        for category, factor, weight, required in rows
+    }
+    expected = {
+        "fnb": {
+            "population_density": 0.20,
+            "competition": 0.20,
+            "public_transport": 0.15,
+            "commercial_activity": 0.15,
+            "office_activity": 0.20,
+            "road_accessibility": 0.10,
+            "healthcare_proximity": 0.00,
+        },
+        "retail": {
+            "population_density": 0.25,
+            "competition": 0.20,
+            "public_transport": 0.15,
+            "commercial_activity": 0.20,
+            "office_activity": 0.10,
+            "road_accessibility": 0.10,
+            "healthcare_proximity": 0.00,
+        },
+        "services": {
+            "population_density": 0.25,
+            "competition": 0.20,
+            "public_transport": 0.10,
+            "commercial_activity": 0.15,
+            "office_activity": 0.15,
+            "road_accessibility": 0.15,
+            "healthcare_proximity": 0.00,
+        },
+    }
+
+    assert len(actual) == 21
+    for category, factors in expected.items():
+        assert sum(actual[(category, factor)][0] for factor in factors) == pytest.approx(1)
+        for factor, weight in factors.items():
+            assert actual[(category, factor)][0] == pytest.approx(weight)
+            assert actual[(category, factor)][1] is (weight > 0)
+
+
 def test_opportunity_scores_have_scope_constraints_and_lookup_index(
     db_session: Session,
 ) -> None:

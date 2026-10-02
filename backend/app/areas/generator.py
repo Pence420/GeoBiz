@@ -7,12 +7,14 @@ from sqlalchemy.orm import Session
 from app.datasets.service import active_release_id, current_dataset_fingerprint
 from app.db.models import (
     BusinessCategory,
+    DataRelease,
     NormalizationProfile,
     OpportunityScore,
     ScoringWeight,
 )
 from app.scoring.domain import NormalizationProfileData, score_location
 from app.scoring.generator import FACTOR_NAMES, SUPPORTED_RADII
+from app.releases.service import LEGACY_CATEGORY_SLUGS, V2_CATEGORY_SLUGS
 
 
 def generate_opportunity_scores(
@@ -23,9 +25,21 @@ def generate_opportunity_scores(
 ) -> list[OpportunityScore]:
     """Generate one auditable point-on-surface observation per kelurahan."""
     release_id = release_id or active_release_id(session)
-    fingerprint = current_dataset_fingerprint(session)
+    release = session.get(DataRelease, release_id)
+    if release is None:
+        raise ValueError(f"data release {release_id} does not exist")
+    fingerprint = (
+        current_dataset_fingerprint(session)
+        if release.status == "active"
+        else release.dataset_fingerprint
+    )
+    category_slugs = (
+        V2_CATEGORY_SLUGS
+        if release.taxonomy_version == "v2.0.0"
+        else LEGACY_CATEGORY_SLUGS
+    )
     categories = session.scalars(
-        select(BusinessCategory).where(BusinessCategory.is_active.is_(True))
+        select(BusinessCategory).where(BusinessCategory.slug.in_(category_slugs))
     ).all()
     generated: list[OpportunityScore] = []
 

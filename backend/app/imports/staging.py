@@ -27,10 +27,16 @@ from app.imports.population import (
 )
 
 OSM_BUSINESS_FILTERS = (
-    "nwr/amenity=restaurant",
+    "nwr/amenity=restaurant,cafe,fast_food,food_court,ice_cream,gym,car_wash",
     "nwr/leisure=fitness_centre",
-    "nwr/amenity=pharmacy",
-    "nwr/healthcare=pharmacy",
+    (
+        "nwr/shop=bakery,confectionery,deli,coffee,ice_cream,supermarket,"
+        "convenience,department_store,variety_store,clothes,shoes,electronics,"
+        "mobile_phone,furniture,books,stationery,cosmetics,jewelry,jewellery,"
+        "hardware,sports,toys,pet,car,motorcycle,hairdresser,beauty,laundry,"
+        "car_repair,motorcycle_repair,bicycle_repair,travel_agency,copyshop"
+    ),
+    "nwr/craft=printer",
 )
 
 

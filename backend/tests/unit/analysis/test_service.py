@@ -1,9 +1,12 @@
 import pytest
 
 from app.analysis.contracts import (
+    AnalysisCoverage,
     AnalyzeLocationRequest,
     ContainingArea,
+    LocationEvidence,
     NearbyMetrics,
+    PoiBreakdown,
 )
 from app.analysis.service import AnalysisService, LocationOutsideCoverageError
 from app.scoring.domain import ScoreResult
@@ -28,12 +31,30 @@ class FakeRepository:
             nearest_major_road_m=None,
         )
 
+    def detailed_evidence(self, **_arguments):
+        return LocationEvidence(
+            competitor_subtype_counts={},
+            nearest_competitors=[],
+            nearest_transport=None,
+            nearest_major_road=None,
+            poi_breakdown=PoiBreakdown(
+                commercial={}, office={}, education={}, healthcare={}
+            ),
+            coverage=AnalysisCoverage(
+                total_businesses=0,
+                named_business_percent=0,
+                missing_source_fields={},
+            ),
+        )
+
 
 def test_point_outside_dki_is_rejected() -> None:
     service = AnalysisService(
         repository=FakeRepository(None),
         score_provider=lambda **_kwargs: None,
         fingerprint_provider=lambda: "dataset-v1",
+        release_version_provider=lambda: ("v1.0.0", "v1.0.0"),
+        snapshots_provider=lambda: [],
     )
 
     with pytest.raises(LocationOutsideCoverageError) as error:
@@ -74,6 +95,8 @@ def test_missing_source_metrics_are_forwarded_as_none_not_zero() -> None:
         ),
         score_provider=score_provider,
         fingerprint_provider=lambda: "dataset-v1",
+        release_version_provider=lambda: ("v1.0.0", "v1.0.0"),
+        snapshots_provider=lambda: [],
     )
 
     response = service.analyze(
@@ -111,6 +134,8 @@ def test_granular_area_uses_parent_dki_coverage_code() -> None:
             profile_id=1,
         ),
         fingerprint_provider=lambda: "dataset-v1",
+        release_version_provider=lambda: ("v1.0.0", "v1.0.0"),
+        snapshots_provider=lambda: [],
     )
 
     response = service.analyze(

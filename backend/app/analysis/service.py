@@ -7,6 +7,7 @@ from app.analysis.contracts import (
     AnalyzeLocationRequest,
     AnalyzeLocationResponse,
     ContainingArea,
+    LocationEvidence,
     NearbyMetrics,
 )
 from app.scoring.domain import ScoreResult
@@ -33,6 +34,15 @@ class AnalysisRepository(Protocol):
         radius_m: int,
     ) -> NearbyMetrics: ...
 
+    def detailed_evidence(
+        self,
+        *,
+        longitude: float,
+        latitude: float,
+        category_slug: str,
+        radius_m: int,
+    ) -> LocationEvidence: ...
+
 
 class AnalysisService:
     def __init__(
@@ -41,10 +51,14 @@ class AnalysisService:
         repository: AnalysisRepository,
         score_provider: Callable[..., ScoreResult],
         fingerprint_provider: Callable[[], str],
+        release_version_provider: Callable[[], tuple[str, str]],
+        snapshots_provider: Callable[[], list[Any]],
     ) -> None:
         self.repository = repository
         self.score_provider = score_provider
         self.fingerprint_provider = fingerprint_provider
+        self.release_version_provider = release_version_provider
+        self.snapshots_provider = snapshots_provider
 
     def analyze(self, request: AnalyzeLocationRequest) -> AnalyzeLocationResponse:
         area = self.repository.find_containing_area(
@@ -61,7 +75,14 @@ class AnalysisService:
             category_slug=request.business_category,
             radius_m=request.radius_m,
         )
+        evidence = self.repository.detailed_evidence(
+            longitude=request.longitude,
+            latitude=request.latitude,
+            category_slug=request.business_category,
+            radius_m=request.radius_m,
+        )
         dataset_fingerprint = self.fingerprint_provider()
+        taxonomy_version, scoring_version = self.release_version_provider()
         raw_factors: dict[str, float | None] = {
             "population_density": metrics.population_density,
             "competition": float(metrics.competitor_count),
@@ -80,6 +101,7 @@ class AnalysisService:
             radius_m=request.radius_m,
             dataset_fingerprint=dataset_fingerprint,
             raw_factors=raw_factors,
+            scoring_version=scoring_version,
         )
         missing_sources = [
             factor for factor, value in raw_factors.items() if value is None
@@ -103,6 +125,15 @@ class AnalysisService:
             nearby_metrics=metrics,
             score=score,
             dataset_fingerprint=dataset_fingerprint,
+            taxonomy_version=taxonomy_version,
+            scoring_version=scoring_version,
+            competitor_subtype_counts=evidence.competitor_subtype_counts,
+            nearest_competitors=evidence.nearest_competitors,
+            nearest_transport=evidence.nearest_transport,
+            nearest_major_road=evidence.nearest_major_road,
+            poi_breakdown=evidence.poi_breakdown,
+            coverage=evidence.coverage,
+            source_snapshots=self.snapshots_provider(),
             limitations=limitations,
         )
 
@@ -113,7 +144,11 @@ def _as_float(value: Any) -> float | None:
 
 def build_analysis_service(session: Session) -> AnalysisService:
     from app.analysis.repository import SpatialRepository
-    from app.datasets.service import current_dataset_fingerprint
+    from app.datasets.service import (
+        active_release,
+        current_dataset_fingerprint,
+        list_dataset_snapshots,
+    )
     from app.scoring.service import score_with_stored_profile
 
     return AnalysisService(
@@ -122,4 +157,9 @@ def build_analysis_service(session: Session) -> AnalysisService:
             session, **arguments
         ),
         fingerprint_provider=lambda: current_dataset_fingerprint(session),
+        release_version_provider=lambda: (
+            active_release(session).taxonomy_version,
+            active_release(session).scoring_version,
+        ),
+        snapshots_provider=lambda: list_dataset_snapshots(session),
     )
