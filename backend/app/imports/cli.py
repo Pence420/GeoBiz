@@ -28,6 +28,7 @@ from app.scoring.generator import generate_normalization_profiles
 from app.areas.generator import generate_opportunity_scores
 from app.refresh.config import RefreshConfig
 from app.refresh.orchestrator import RefreshOrchestrator, build_default_hooks
+from app.refresh.tiles import verify_tile_service
 from app.releases.service import fail_release, rollback_release
 
 DEFAULT_REFRESH_CONFIG = Path("/data/sources/geobiz-v2.json")
@@ -114,6 +115,15 @@ def build_parser() -> argparse.ArgumentParser:
     refresh_activate.add_argument("--tile", type=Path, required=True)
     refresh_activate.add_argument("--config", type=Path, default=DEFAULT_REFRESH_CONFIG)
 
+    offline_map_prepare = commands.add_parser(
+        "offline-map-prepare",
+        help="clone the active data snapshot for an offline basemap-only release",
+    )
+    offline_map_prepare.add_argument("--release-key", required=True)
+    offline_map_prepare.add_argument(
+        "--config", type=Path, default=DEFAULT_REFRESH_CONFIG
+    )
+
     refresh_fail = commands.add_parser(
         "refresh-fail", help="record failure for an incomplete prepared release"
     )
@@ -128,6 +138,14 @@ def build_parser() -> argparse.ArgumentParser:
     )
     rollback.add_argument("release_key")
     rollback.add_argument("--tile-root", type=Path, default=Path("/data/tiles/releases"))
+
+    verify_tiles = commands.add_parser(
+        "verify-tile-service", help="verify Martin catalog and representative DKI tiles"
+    )
+    verify_tiles.add_argument("--release-key", required=True)
+    verify_tiles.add_argument(
+        "--base-url", default="http://tiles:3000"
+    )
     return parser
 
 
@@ -312,6 +330,18 @@ def main() -> None:
         print(json.dumps(payload, indent=2))
         return
 
+    if args.command == "offline-map-prepare":
+        orchestrator = RefreshOrchestrator(
+            RefreshConfig.load(args.config), build_default_hooks()
+        )
+        with SessionLocal() as session:
+            result = orchestrator.prepare_offline_map(
+                session, release_key=args.release_key
+            )
+            session.commit()
+        print(result.model_dump_json(indent=2))
+        return
+
     if args.command == "refresh-fail":
         with SessionLocal() as session:
             release = session.scalar(
@@ -360,6 +390,11 @@ def main() -> None:
             payload = _release_payload(release)
             session.commit()
         print(json.dumps(payload, indent=2))
+        return
+
+    if args.command == "verify-tile-service":
+        result = verify_tile_service(args.base_url, args.release_key)
+        print(result.model_dump_json(indent=2))
         return
 
     print(args.path.read_text(encoding="utf-8"), end="")

@@ -19,3 +19,8 @@ frontend/vite.config.d.ts
 # Local data artifacts
 data/raw/
 data/processed/
+data/refresh/
+data/tiles/releases/*.pmtiles
+data/tiles/releases/*.partial
+data/tiles/releases/*.partial.pmtiles
+data/tiles/tmp/

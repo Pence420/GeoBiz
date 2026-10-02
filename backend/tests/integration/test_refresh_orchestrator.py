@@ -1,15 +1,19 @@
 from pathlib import Path
+import hashlib
 
 import pytest
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.datasets.service import active_release
+from app.db.models import Business, DataRelease, DataReleaseSource
 from app.refresh.config import RefreshConfig, SourceConfig
 from app.refresh.orchestrator import (
     PreparedInputs,
     RefreshBusyError,
     RefreshHooks,
     RefreshOrchestrator,
+    RefreshStateError,
     TileMetadata,
 )
 
@@ -168,4 +172,66 @@ def test_lock_contention_rejects_phase(db_session: Session, tmp_path: Path) -> N
             release_key="refresh-20261001-busy",
             dry_run=False,
             accept_count_change=False,
+        )
+
+
+def test_offline_map_prepare_clones_active_snapshot_and_verifies_pbf(
+    db_session: Session, tmp_path: Path
+) -> None:
+    active = active_release(db_session)
+    source_pbf = tmp_path / "retained-jakarta.osm.pbf"
+    source_pbf.write_bytes(b"retained verified osm snapshot")
+    digest = hashlib.sha256(source_pbf.read_bytes()).hexdigest()
+    active.combined_manifest = {
+        "verified_pbf_path": str(source_pbf),
+        "sources": [{"role": "osm", "sha256": digest}],
+    }
+    db_session.flush()
+    config = _config(tmp_path)
+    orchestrator = RefreshOrchestrator(config, _hooks())
+    old_business_count = db_session.scalar(
+        select(func.count(Business.id)).where(Business.data_release_id == active.id)
+    )
+
+    result = orchestrator.prepare_offline_map(
+        db_session, release_key="offline-map-20261002-test"
+    )
+
+    cloned = db_session.scalar(
+        select(DataRelease).where(DataRelease.release_key == result.release_key)
+    )
+    assert result.status == "validated"
+    assert Path(result.verified_pbf_path).read_bytes() == source_pbf.read_bytes()
+    assert cloned is not None
+    assert cloned.dataset_fingerprint == active.dataset_fingerprint
+    assert cloned.combined_manifest["release_kind"] == "offline-map-only"
+    assert db_session.scalar(
+        select(func.count(Business.id)).where(Business.data_release_id == cloned.id)
+    ) == old_business_count
+    assert db_session.scalar(
+        select(func.count(DataReleaseSource.data_release_id)).where(
+            DataReleaseSource.data_release_id == cloned.id
+        )
+    ) == db_session.scalar(
+        select(func.count(DataReleaseSource.data_release_id)).where(
+            DataReleaseSource.data_release_id == active.id
+        )
+    )
+
+
+def test_offline_map_prepare_rejects_tampered_retained_pbf(
+    db_session: Session, tmp_path: Path
+) -> None:
+    active = active_release(db_session)
+    source_pbf = tmp_path / "tampered.osm.pbf"
+    source_pbf.write_bytes(b"tampered")
+    active.combined_manifest = {
+        "verified_pbf_path": str(source_pbf),
+        "sources": [{"role": "osm", "sha256": "0" * 64}],
+    }
+    db_session.flush()
+
+    with pytest.raises(RefreshStateError, match="checksum"):
+        RefreshOrchestrator(_config(tmp_path), _hooks()).prepare_offline_map(
+            db_session, release_key="offline-map-20261002-bad"
         )

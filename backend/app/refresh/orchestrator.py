@@ -277,6 +277,104 @@ class RefreshOrchestrator:
         finally:
             self.unlock(session)
 
+    def prepare_offline_map(
+        self,
+        session: Session,
+        *,
+        release_key: str,
+    ) -> PreparedRelease:
+        """Prepare a new immutable release using the active data snapshot.
+
+        This path intentionally changes only the basemap. It verifies the retained
+        OSM input, clones release-scoped source data, and leaves activation to the
+        same tile verification gate used by a full refresh.
+        """
+        self._validate_release_key(release_key)
+        if not self.lock(session):
+            raise RefreshBusyError("another GeoBiz refresh phase is running")
+        workspace: Path | None = None
+        try:
+            self._preflight()
+            pending = session.scalar(
+                select(DataRelease).where(
+                    DataRelease.status.in_(("staging", "validated"))
+                )
+            )
+            if pending is not None:
+                raise RefreshStateError(
+                    f"release {pending.release_key} is already being prepared"
+                )
+
+            current = active_release(session)
+            manifest = dict(current.combined_manifest or {})
+            retained_value = manifest.get("verified_pbf_path")
+            if not retained_value:
+                raise RefreshStateError(
+                    "active release does not retain a verified OSM PBF path"
+                )
+            retained = Path(str(retained_value))
+            if not retained.is_file():
+                raise RefreshStateError("retained verified OSM PBF is missing")
+            osm_source = next(
+                (
+                    item
+                    for item in manifest.get("sources", [])
+                    if item.get("role") == "osm"
+                ),
+                None,
+            )
+            if not osm_source or not osm_source.get("sha256"):
+                raise RefreshStateError(
+                    "active release does not record the OSM PBF checksum"
+                )
+            actual_sha = _sha256_file(retained)
+            if actual_sha != osm_source["sha256"]:
+                raise RefreshStateError("retained OSM PBF checksum does not match")
+
+            workspace = self.config.workspace_root / release_key
+            if workspace.exists():
+                raise RefreshStateError("release workspace already exists")
+            raw_dir = workspace / "raw"
+            raw_dir.mkdir(parents=True)
+            cloned_pbf = raw_dir / "jakarta.osm.pbf"
+            try:
+                os.link(retained, cloned_pbf)
+            except OSError:
+                shutil.copy2(retained, cloned_pbf)
+
+            expected_tile = self.config.tile_root / f"{release_key}.pmtiles"
+            successor_manifest = {
+                **manifest,
+                "release_key": release_key,
+                "release_kind": "offline-map-only",
+                "based_on_release": current.release_key,
+                "dataset_fingerprint": current.dataset_fingerprint,
+                "taxonomy_version": current.taxonomy_version,
+                "scoring_version": current.scoring_version,
+                "workspace_path": str(workspace),
+                "verified_pbf_path": str(cloned_pbf),
+                "expected_tile_path": str(expected_tile),
+            }
+            release = create_staging_release(session, successor_manifest)
+            with session.begin_nested():
+                _clone_release_snapshot(session, current.id, release.id)
+            release.status = "validated"
+            release.validated_at = datetime.now(UTC)
+            session.flush()
+            return PreparedRelease(
+                release_key=release_key,
+                status="validated",
+                workspace=str(workspace),
+                verified_pbf_path=str(cloned_pbf),
+                expected_tile_path=str(expected_tile),
+            )
+        except Exception:
+            if workspace is not None and workspace.exists():
+                shutil.rmtree(workspace)
+            raise
+        finally:
+            self.unlock(session)
+
     def _preflight(self) -> None:
         self.config.workspace_root.mkdir(parents=True, exist_ok=True)
         self.config.tile_root.mkdir(parents=True, exist_ok=True)
@@ -374,6 +472,86 @@ def build_default_hooks() -> RefreshHooks:
         verify_tile=_verify_tile,
         derive=_derive_release,
     )
+
+
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _clone_release_snapshot(session: Session, source_id: int, target_id: int) -> None:
+    params = {"source_id": source_id, "target_id": target_id}
+    statements = (
+        """
+        INSERT INTO data_release_sources (data_release_id, dataset_source_id, role)
+        SELECT :target_id, dataset_source_id, role
+        FROM data_release_sources WHERE data_release_id = :source_id
+        """,
+        """
+        INSERT INTO administrative_areas
+            (data_release_id, dataset_source_id, source_record_id, official_code,
+             name, area_type, population, population_density, observed_at,
+             retrieved_at, original_properties, geom)
+        SELECT :target_id, dataset_source_id, source_record_id, official_code,
+               name, area_type, population, population_density, observed_at,
+               retrieved_at, original_properties, geom
+        FROM administrative_areas WHERE data_release_id = :source_id
+        """,
+        """
+        INSERT INTO businesses
+            (data_release_id, category_id, dataset_source_id, name, source_type,
+             source_record_id, business_subtype, taxonomy_version,
+             source_observed_at, retrieved_at, original_tags, geom)
+        SELECT :target_id, category_id, dataset_source_id, name, source_type,
+               source_record_id, business_subtype, taxonomy_version,
+               source_observed_at, retrieved_at, original_tags, geom
+        FROM businesses WHERE data_release_id = :source_id
+        """,
+        """
+        INSERT INTO pois
+            (data_release_id, dataset_source_id, name, poi_type, source_type,
+             source_record_id, retrieved_at, original_tags, geom)
+        SELECT :target_id, dataset_source_id, name, poi_type, source_type,
+               source_record_id, retrieved_at, original_tags, geom
+        FROM pois WHERE data_release_id = :source_id
+        """,
+        """
+        INSERT INTO roads
+            (data_release_id, dataset_source_id, name, road_type, source_type,
+             source_record_id, retrieved_at, original_tags, geom)
+        SELECT :target_id, dataset_source_id, name, road_type, source_type,
+               source_record_id, retrieved_at, original_tags, geom
+        FROM roads WHERE data_release_id = :source_id
+        """,
+        """
+        INSERT INTO transport_stops
+            (data_release_id, dataset_source_id, name, transport_type,
+             source_record_id, parent_stop_id, retrieved_at,
+             original_properties, geom)
+        SELECT :target_id, dataset_source_id, name, transport_type,
+               source_record_id, NULL, retrieved_at, original_properties, geom
+        FROM transport_stops WHERE data_release_id = :source_id
+        """,
+        """
+        UPDATE transport_stops AS child_new
+        SET parent_stop_id = parent_new.id
+        FROM transport_stops AS child_old
+        JOIN transport_stops AS parent_old ON parent_old.id = child_old.parent_stop_id
+        JOIN transport_stops AS parent_new
+          ON parent_new.data_release_id = :target_id
+         AND parent_new.dataset_source_id = parent_old.dataset_source_id
+         AND parent_new.source_record_id = parent_old.source_record_id
+        WHERE child_new.data_release_id = :target_id
+          AND child_old.data_release_id = :source_id
+          AND child_new.dataset_source_id = child_old.dataset_source_id
+          AND child_new.source_record_id = child_old.source_record_id
+        """,
+    )
+    for statement in statements:
+        session.execute(text(statement), params)
 
 
 def _download_configured_sources(
