@@ -74,6 +74,17 @@ export function AnalyticsView({
             {data.category_counts.map((item) => <article key={item.category}><span>{categoryLabels[item.category]} records</span><strong>{item.count.toLocaleString("id-ID")}</strong><small>Traceable OpenStreetMap businesses</small></article>)}
           </section>
 
+          <section className="analytics-panel subtype-panel" aria-label="Business subtype composition">
+            <div className="analytics-title"><div><h2>Subtype composition</h2><p>Mapped OSM subtypes inside the selected umbrella category.</p></div><span>{categoryLabels[category]}</span></div>
+            {data.subtype_counts.length ? (
+              <div className="subtype-table" role="table" aria-label={`${categoryLabels[category]} subtype counts`}>
+                {data.subtype_counts.map((item) => (
+                  <div role="row" key={item.subtype}><strong>{item.subtype}</strong><i><b style={{ width: `${data.category_counts.find((entry) => entry.category === category)?.count ? item.count / (data.category_counts.find((entry) => entry.category === category)?.count ?? 1) * 100 : 0}%` }} /></i><span>{item.count.toLocaleString("id-ID")}</span></div>
+                ))}
+              </div>
+            ) : <p className="panel-empty">No mapped subtypes are available for this category.</p>}
+          </section>
+
           <section className="analytics-grid">
             <article className="analytics-panel opportunity-list-panel">
               <div className="analytics-title"><div><h2>Top opportunity areas</h2><p>{categoryLabels[category]} · {radius / 1000} km radius</p></div><span>Score</span></div>
@@ -110,7 +121,7 @@ export function AnalyticsView({
               </div>
             </article>
           </section>
-          <footer className="view-provenance">Scoring {data.scoring_version} · dataset {data.dataset_fingerprint.slice(0, 16)} · aggregate evidence, not revenue or predicted business success.</footer>
+          <footer className="view-provenance">Release {data.release_key} · taxonomy {data.taxonomy_version} · scoring {data.scoring_version} · dataset {data.dataset_fingerprint.slice(0, 16)} · aggregate evidence, not revenue or predicted business success.</footer>
         </>
       ) : null}
     </main>

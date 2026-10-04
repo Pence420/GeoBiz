@@ -54,19 +54,33 @@ export function MethodologyView() {
             </article>
           </section>
 
+          <section className="taxonomy-panel">
+            <div className="analytics-title"><div><h2>Umbrella taxonomy mappings</h2><p>Source-tag rules used by taxonomy {data.taxonomy_version}; rendered directly from the active release.</p></div><span>{data.taxonomy_rules.length} rules</span></div>
+            <div className="taxonomy-table" role="table" aria-label="Business taxonomy rules">
+              <div role="row"><strong>Umbrella category</strong><strong>Subtype</strong><strong>Required OSM tags</strong></div>
+              {data.taxonomy_rules.map((rule) => <div role="row" key={`${rule.category}-${rule.subtype}`}><span>{rule.category}</span><strong>{rule.subtype}</strong><code>{Object.entries(rule.required_tags).map(([key, value]) => `${key}=${value}`).join(" · ")}</code></div>)}
+            </div>
+          </section>
+
           <section className="source-panel">
             <div className="analytics-title"><div><h2>Source snapshots</h2><p>Every promoted dataset is checksum-verified before analysis.</p></div><span>{data.datasets.length} sources</span></div>
             <div className="source-table" role="table" aria-label="Dataset source snapshots">
-              <div role="row"><span>Provider / dataset</span><span>Observed</span><span>Retrieved</span><span>License</span></div>
-              {data.datasets.map((dataset) => <div role="row" key={dataset.slug}><span><a href={dataset.source_url} target="_blank" rel="noreferrer">{dataset.provider}</a><small>{dataset.slug}<br />{dataset.attribution}</small></span><span>{formatDate(dataset.observed_at)}</span><span>{formatDate(dataset.retrieved_at)}</span><span>{dataset.license_name}</span></div>)}
+              <div role="row"><span>Provider / dataset</span><span>Observed</span><span>Retrieved</span><span>License / SHA-256</span></div>
+              {data.datasets.map((dataset) => <div role="row" key={dataset.slug}><span><a href={dataset.source_url} target="_blank" rel="noreferrer">{dataset.provider}</a><small>{dataset.slug}<br />{dataset.attribution}</small></span><span>{formatDate(dataset.observed_at)}</span><span>{formatDate(dataset.retrieved_at)}</span><span>{dataset.license_name}<code>{dataset.sha256}</code></span></div>)}
             </div>
+          </section>
+
+          <section className="release-audit" aria-label="Active release audit identifiers">
+            <div><span>Release</span><code>{data.release_key}</code></div>
+            <div><span>Taxonomy</span><code>{data.taxonomy_version}</code></div>
+            <div><span>PMTiles SHA-256</span><code>{data.tile_sha256 ?? "No active offline artifact"}</code></div>
           </section>
 
           <section className="limitations-panel">
             <div><h2>Interpretation limits</h2><p>These constraints are part of the result, not fine print.</p></div>
             <ul>{data.limitations.map((item) => <li key={item}>{item}</li>)}</ul>
           </section>
-          <footer className="view-provenance">Dataset fingerprint {data.dataset_fingerprint} · supported radii {data.supported_radii_m.map((value) => `${value / 1000} km`).join(", ")}.</footer>
+          <footer className="view-provenance">Release {data.release_key} · dataset fingerprint {data.dataset_fingerprint} · supported radii {data.supported_radii_m.map((value) => `${value / 1000} km`).join(", ")}.</footer>
         </>
       ) : null}
     </main>

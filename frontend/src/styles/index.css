@@ -214,6 +214,12 @@ button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible
 .analytics-kpis strong { margin: auto 0 4px; font-size: 30px; letter-spacing: -0.05em; }
 .analytics-kpis small { color: #969ba3; font-size: 8px; }
 .analytics-grid { display: grid; grid-template-columns: 0.8fr 1.2fr; gap: 10px; }
+.subtype-panel { margin-bottom: 10px; }
+.subtype-table { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 8px; }
+.subtype-table > div { display: grid; grid-template-columns: 90px 1fr 45px; align-items: center; gap: 9px; padding: 10px; background: #f5f6f8; border-radius: 8px; font-size: 9px; }
+.subtype-table i { height: 6px; overflow: hidden; background: #e1e4ea; border-radius: 6px; }
+.subtype-table b { display: block; height: 100%; background: #3157e8; }
+.subtype-table span { text-align: right; font-variant-numeric: tabular-nums; }
 .analytics-panel, .method-panel, .source-panel, .limitations-panel { padding: 22px; background: #fff; border: 1px solid #e2e4e8; border-radius: 13px; }
 .analytics-title { display: flex; align-items: start; justify-content: space-between; gap: 12px; margin-bottom: 18px; }
 .analytics-title h2 { font-size: 16px; }
@@ -268,10 +274,18 @@ button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible
 .weight-table > div { min-width: 520px; display: grid; grid-template-columns: 1.6fr repeat(3, 0.7fr); gap: 8px; padding: 9px 8px; border-bottom: 1px solid #eceef1; color: #666c75; font-size: 9px; text-align: right; }
 .weight-table > div > :first-child { color: #2d3138; text-align: left; }
 .source-panel { margin-bottom: 10px; }
+.taxonomy-panel { margin-bottom: 10px; padding: 22px; background: #fff; border: 1px solid #e2e4e8; border-radius: 13px; }
+.taxonomy-table { overflow-x: auto; }
+.taxonomy-table > div { min-width: 620px; display: grid; grid-template-columns: 0.7fr 0.9fr 1.6fr; gap: 14px; padding: 10px 8px; border-top: 1px solid #eceef1; color: #646a73; font-size: 9px; }
+.taxonomy-table code, .source-table code, .release-audit code { overflow-wrap: anywhere; color: #3157e8; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 8px; }
 .source-table { overflow-x: auto; }
 .source-table > div { min-width: 720px; display: grid; grid-template-columns: 1.6fr 0.7fr 0.7fr 1fr; gap: 15px; padding: 12px 8px; border-top: 1px solid #eceef1; color: #6f7580; font-size: 9px; }
 .source-table a { color: #3157e8; font-weight: 700; }
 .source-table small { display: block; margin-top: 4px; color: #979ba3; line-height: 1.45; }
+.source-table code { display: block; margin-top: 5px; color: #7d828c; }
+.release-audit { display: grid; grid-template-columns: 0.7fr 0.7fr 2fr; gap: 1px; overflow: hidden; margin-bottom: 10px; background: #dfe2e7; border: 1px solid #dfe2e7; border-radius: 10px; }
+.release-audit > div { min-width: 0; display: grid; gap: 5px; padding: 14px; background: #f7f8fa; }
+.release-audit span { color: #8d929b; font-size: 8px; text-transform: uppercase; }
 .limitations-panel { display: grid; grid-template-columns: 0.7fr 1.3fr; gap: 30px; color: #fff; background: #17191e; border-color: #17191e; }
 .limitations-panel p, .limitations-panel li { color: #aaafb8; font-size: 10px; line-height: 1.6; }
 .limitations-panel ul { margin: 0; padding-left: 18px; }
