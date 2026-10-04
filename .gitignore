@@ -24,3 +24,9 @@ data/tiles/releases/*.pmtiles
 data/tiles/releases/*.partial
 data/tiles/releases/*.partial.pmtiles
 data/tiles/tmp/
+
+# Browser E2E artifacts
+e2e/node_modules/
+e2e/test-results/
+e2e/playwright-report/
+e2e/blob-report/

@@ -86,6 +86,7 @@ export function App() {
     Array<{ slug: BusinessCategory; business_count: number }>
   >([]);
   const [businesses, setBusinesses] = useState<BusinessFeature[]>([]);
+  const [focusedBusiness, setFocusedBusiness] = useState<BusinessFeature | null>(null);
   const [analysis, setAnalysis] = useState<Analysis | null>(null);
   const [populationAreas, setPopulationAreas] = useState<MapLayerFeature[]>([]);
   const [opportunityAreas, setOpportunityAreas] = useState<MapLayerFeature[]>([]);
@@ -354,6 +355,7 @@ export function App() {
                 <GeoMap
                   mapConfig={mapConfig}
                   businesses={businesses}
+                  focusedBusiness={focusedBusiness}
                   category={category}
                   selectedLocation={location}
                   radius={radius}
@@ -473,7 +475,17 @@ export function App() {
                 </div>
                 {businesses.slice(0, 6).map((business) => (
                   <div className="table-row" role="row" key={business.id}>
-                    <span><i className={`business-icon ${business.properties.category}`} aria-hidden="true" />{business.properties.name ?? "Nama belum tersedia"}</span>
+                    <span>
+                      <i className={`business-icon ${business.properties.category}`} aria-hidden="true" />
+                      <button
+                        className="business-inspect"
+                        type="button"
+                        onClick={() => setFocusedBusiness(business)}
+                        aria-label={`Inspect ${business.properties.name ?? "unnamed business"} on map`}
+                      >
+                        {business.properties.name ?? "Nama belum tersedia"}
+                      </button>
+                    </span>
                     <span>{categoryLabels[business.properties.category]}</span>
                     <span className="source-id">OSM {business.properties.source_type}/{business.properties.source_record_id}</span>
                   </div>

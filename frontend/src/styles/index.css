@@ -193,6 +193,8 @@ button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible
 .business-popup strong { color: #17191e; font-size: 12px; }
 .business-popup span { color: #3157e8; font-size: 10px; text-transform: capitalize; }
 .business-popup small { color: #7d838d; font-size: 8px; }
+.business-inspect { border: 0; padding: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.business-inspect:hover, .business-inspect:focus-visible { color: #3157e8; text-decoration: underline; }
 .map-hint { display: flex; justify-content: space-between; gap: 12px; }
 .map-hint strong { color: #343840; font-weight: 620; }
 .data-limitation { margin: 8px 0 !important; padding: 8px 10px; color: #605f53 !important; background: #fff9e8; border: 1px solid #efe1b5; border-radius: 7px; }

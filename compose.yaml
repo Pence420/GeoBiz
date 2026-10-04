@@ -58,6 +58,19 @@ services:
     volumes:
       - ./data:/data
 
+  e2e:
+    image: mcr.microsoft.com/playwright:v1.63.0-noble
+    profiles: ["tools"]
+    working_dir: /e2e
+    volumes:
+      - ./e2e:/e2e
+    environment:
+      BASE_URL: http://frontend:5173
+    depends_on:
+      - frontend
+      - backend
+      - tiles
+
 volumes:
   geobiz-postgres:
   geobiz-node-modules:

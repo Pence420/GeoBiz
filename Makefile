@@ -1,4 +1,4 @@
-.PHONY: up down logs migrate profiles opportunities test test-backend test-frontend build-frontend lint refresh-data refresh-data-dry-run refresh-status prepare-offline-map rollback-release
+.PHONY: up down logs migrate profiles opportunities test test-backend test-frontend build-frontend lint e2e refresh-data refresh-data-dry-run refresh-status prepare-offline-map rollback-release
 
 up:
 	docker compose up -d --build
@@ -32,6 +32,10 @@ build-frontend:
 lint:
 	docker compose run --rm backend python -m compileall -q app tests
 	docker compose run --rm frontend npm run lint
+
+e2e:
+	docker compose run --rm e2e npm ci
+	docker compose run --rm e2e npx playwright test
 
 refresh-data:
 	./scripts/refresh-data.sh $(if $(filter 1 true yes,$(ACCEPT_COUNT_CHANGE)),--accept-count-change,)

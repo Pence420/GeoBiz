@@ -21,6 +21,7 @@ maplibregl.addProtocol("pmtiles", pmtilesProtocol.tile);
 type Props = {
   mapConfig: MapConfig;
   businesses: BusinessFeature[];
+  focusedBusiness: BusinessFeature | null;
   category: BusinessCategory;
   selectedLocation: { longitude: number; latitude: number };
   radius: number;
@@ -54,6 +55,7 @@ const categoryColors: Record<BusinessCategory, string> = {
 export function GeoMap({
   mapConfig,
   businesses,
+  focusedBusiness,
   category,
   selectedLocation,
   radius,
@@ -328,6 +330,12 @@ export function GeoMap({
 
   useEffect(() => {
     const map = mapRef.current;
+    if (!mapLoaded || !map || !focusedBusiness) return;
+    showBusinessFeaturePopup(map, focusedBusiness);
+  }, [focusedBusiness, mapLoaded]);
+
+  useEffect(() => {
+    const map = mapRef.current;
     if (!mapLoaded || !map?.isStyleLoaded()) return;
     (map.getSource("selection") as GeoJSONSource | undefined)?.setData(
       selectionData(selectedLocation, radius),
@@ -435,17 +443,46 @@ function showBusinessPopup(map: maplibregl.Map, event: MapLayerMouseEvent) {
   event.originalEvent.stopPropagation();
   const feature = event.features?.[0];
   if (!feature || feature.geometry.type !== "Point") return;
-  const coordinates = feature.geometry.coordinates.slice() as [number, number];
+  showBusinessDetails(
+    map,
+    feature.geometry.coordinates.slice() as [number, number],
+    String(feature.properties?.name || "Nama belum tersedia"),
+    String(feature.properties?.category || "business"),
+    String(feature.properties?.source_type || "record"),
+    String(feature.properties?.source_record_id || "unknown"),
+  );
+}
+
+function showBusinessFeaturePopup(map: maplibregl.Map, business: BusinessFeature) {
+  showBusinessDetails(
+    map,
+    business.geometry.coordinates.slice() as [number, number],
+    business.properties.name || "Nama belum tersedia",
+    business.properties.category,
+    business.properties.source_type,
+    business.properties.source_record_id,
+  );
+}
+
+function showBusinessDetails(
+  map: maplibregl.Map,
+  coordinates: [number, number],
+  name: string,
+  businessCategory: string,
+  sourceType: string,
+  sourceRecordId: string,
+) {
   const container = document.createElement("div");
   container.className = "business-popup";
   const title = document.createElement("strong");
-  title.textContent = String(feature.properties?.name || "Nama belum tersedia");
-  const category = document.createElement("span");
-  category.textContent = String(feature.properties?.category || "business");
+  title.textContent = name;
+  const categoryLabel = document.createElement("span");
+  categoryLabel.textContent = businessCategory;
   const source = document.createElement("small");
-  source.textContent = `OSM ${String(feature.properties?.source_type || "record")}/${String(feature.properties?.source_record_id || "unknown")}`;
-  container.append(title, category, source);
+  source.textContent = `OSM ${sourceType}/${sourceRecordId}`;
+  container.append(title, categoryLabel, source);
   new maplibregl.Popup({ offset: 12 }).setLngLat(coordinates).setDOMContent(container).addTo(map);
+  map.easeTo({ center: coordinates, zoom: Math.max(map.getZoom(), 14), duration: 400 });
 }
 
 function selectMapLocation(
