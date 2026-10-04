@@ -7,9 +7,9 @@ import {
 } from "../lib/api";
 
 const categoryLabels: Record<BusinessCategory, string> = {
-  restaurant: "Restaurant",
-  gym: "Gym",
-  pharmacy: "Pharmacy",
+  fnb: "F&B",
+  retail: "Retail",
+  services: "Services",
 };
 
 type Props = {

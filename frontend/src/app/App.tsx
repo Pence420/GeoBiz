@@ -11,12 +11,14 @@ import {
 
 import { AnalyticsView } from "../components/AnalyticsView";
 import { MethodologyView } from "../components/MethodologyView";
+import { NearbyEvidence } from "../components/NearbyEvidence";
 import { SearchBox } from "../components/SearchBox";
 import {
   analyzeLocation,
   fetchAreaRankings,
   fetchBusinesses,
   fetchCategories,
+  fetchMapConfig,
   fetchOpportunityMap,
   fetchPointLayer,
   fetchPopulationLayer,
@@ -26,6 +28,7 @@ import {
   type BusinessCategory,
   type BusinessFeature,
   type MapLayerFeature,
+  type MapConfig,
 } from "../lib/api";
 
 const GeoMap = lazy(() =>
@@ -50,9 +53,9 @@ const layerLabels: Record<LayerKey, string> = {
 };
 
 const categoryLabels: Record<BusinessCategory, string> = {
-  restaurant: "Restaurant",
-  gym: "Gym",
-  pharmacy: "Pharmacy",
+  fnb: "F&B",
+  retail: "Retail",
+  services: "Services",
 };
 
 const metricLabels: Array<[keyof Analysis["nearby_metrics"], string]> = [
@@ -76,7 +79,7 @@ const factorLabels: Record<string, string> = {
 
 export function App() {
   const [activeView, setActiveView] = useState<ViewKey>(() => viewFromHash());
-  const [category, setCategory] = useState<BusinessCategory>("restaurant");
+  const [category, setCategory] = useState<BusinessCategory>("fnb");
   const [radius, setRadius] = useState(1000);
   const [location, setLocation] = useState(DEFAULT_LOCATION);
   const [categories, setCategories] = useState<
@@ -111,6 +114,14 @@ export function App() {
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [mapConfig, setMapConfig] = useState<MapConfig | null>(null);
+  const [configError, setConfigError] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetchMapConfig().then(setMapConfig).catch((requestError: Error) => {
+      setConfigError(requestError.message || "Map configuration is unavailable.");
+    });
+  }, []);
 
   useEffect(() => {
     const syncView = () => setActiveView(viewFromHash());
@@ -119,12 +130,14 @@ export function App() {
   }, []);
 
   useEffect(() => {
+    if (mapConfig?.taxonomy_version !== "v2.0.0") return;
     fetchCategories()
       .then(setCategories)
       .catch(() => setError("Data kategori belum bisa dimuat."));
-  }, []);
+  }, [mapConfig?.taxonomy_version]);
 
   useEffect(() => {
+    if (mapConfig?.taxonomy_version !== "v2.0.0") return;
     let cancelled = false;
     setBusinesses([]);
     fetchBusinesses(category)
@@ -137,9 +150,10 @@ export function App() {
     return () => {
       cancelled = true;
     };
-  }, [category]);
+  }, [category, mapConfig?.taxonomy_version]);
 
   useEffect(() => {
+    if (mapConfig?.taxonomy_version !== "v2.0.0") return;
     let cancelled = false;
     setLoading(true);
     setError(null);
@@ -159,9 +173,10 @@ export function App() {
     return () => {
       cancelled = true;
     };
-  }, [analysisRequest, category, radius, location]);
+  }, [analysisRequest, category, radius, location, mapConfig?.taxonomy_version]);
 
   useEffect(() => {
+    if (mapConfig?.taxonomy_version !== "v2.0.0") return;
     let cancelled = false;
     setOpportunityError(null);
     setOpportunityAreas([]);
@@ -185,7 +200,7 @@ export function App() {
     return () => {
       cancelled = true;
     };
-  }, [category, radius]);
+  }, [category, radius, mapConfig?.taxonomy_version]);
 
   useEffect(() => {
     if (layers.population && populationAreas.length === 0) {
@@ -283,6 +298,16 @@ export function App() {
     );
   };
 
+  if (configError) {
+    return <div className="compatibility-state" role="alert"><strong>GeoBiz configuration unavailable</strong><p>{configError}</p></div>;
+  }
+  if (!mapConfig) {
+    return <div className="compatibility-state" role="status">Loading active GeoBiz release…</div>;
+  }
+  if (mapConfig.taxonomy_version !== "v2.0.0") {
+    return <div className="compatibility-state" role="alert"><strong>GeoBiz v2 data is required</strong><p>The active release uses taxonomy {mapConfig.taxonomy_version}. Run the on-demand data refresh before opening this interface.</p></div>;
+  }
+
   return (
     <div className="app-shell" id="top">
       <a className="skip-link" href="#main-content">Skip to main content</a>
@@ -327,6 +352,7 @@ export function App() {
             <div className="map-stage">
               <Suspense fallback={<div className="map-canvas map-loading">Memuat peta DKI Jakarta…</div>}>
                 <GeoMap
+                  mapConfig={mapConfig}
                   businesses={businesses}
                   category={category}
                   selectedLocation={location}
@@ -507,6 +533,8 @@ export function App() {
                 <div><i style={{ width: `${Math.min(100, (analysis?.nearby_metrics.population_density ?? 0) / 500)}%` }} /></div>
               </div>
             </section>
+
+            {analysis ? <NearbyEvidence analysis={analysis} /> : null}
 
             <section className="method-card" id="methodology">
               <h2>Transparent by design</h2>

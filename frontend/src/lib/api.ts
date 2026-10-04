@@ -1,6 +1,20 @@
 import type { Feature, Geometry, Point } from "geojson";
 
-export type BusinessCategory = "restaurant" | "gym" | "pharmacy";
+export type BusinessCategory = "fnb" | "retail" | "services";
+
+export type MapConfig = {
+  release_id: number;
+  release_key: string;
+  taxonomy_version: string;
+  tile_url: string | null;
+  tile_sha256: string | null;
+  bounds: [number, number, number, number];
+  min_zoom: number;
+  max_zoom: number;
+  attribution: string;
+  mode: "offline" | "online_fallback";
+  fallback_available: boolean;
+};
 
 export type BusinessFeature = Feature<
   Point,
@@ -9,6 +23,14 @@ export type BusinessFeature = Feature<
     category: BusinessCategory;
     source_type: string;
     source_record_id: string;
+    business_subtype: string;
+    taxonomy_version: string;
+    address: string | null;
+    brand: string | null;
+    operator: string | null;
+    opening_hours: string | null;
+    phone: string | null;
+    website: string | null;
   }
 > & { id: number };
 
@@ -58,7 +80,7 @@ export type Analysis = {
   longitude: number;
   business_category: BusinessCategory;
   radius_m: number;
-  containing_area: { name: string; population_density: number | null };
+  containing_area: ContainingArea;
   nearby_metrics: {
     competitor_count: number;
     transport_stop_count: number | null;
@@ -79,8 +101,79 @@ export type Analysis = {
     missing_factors: string[];
     scoring_version: string;
   };
+  taxonomy_version: string;
+  scoring_version: string;
+  competitor_subtype_counts: Record<string, number>;
+  nearest_competitors: NearbyBusiness[];
+  nearest_transport: NearbyTransport | null;
+  nearest_major_road: NearbyRoad | null;
+  poi_breakdown: Record<"commercial" | "office" | "education" | "healthcare", Record<string, number>>;
+  coverage: AnalysisCoverage;
+  source_snapshots: DatasetSnapshot[];
   dataset_fingerprint: string;
   limitations: string[];
+};
+
+export type ContainingArea = {
+  id: number;
+  name: string;
+  official_code: string | null;
+  coverage_official_code: string | null;
+  population_density: number | null;
+  area_type: string | null;
+  kecamatan: string | null;
+  population: number | null;
+  population_observed_at: string | null;
+};
+
+export type NearbyBusiness = {
+  name: string | null;
+  business_subtype: string;
+  distance_m: number;
+  latitude: number;
+  longitude: number;
+  source_type: string;
+  source_record_id: string;
+  address: string | null;
+  brand: string | null;
+  operator: string | null;
+  opening_hours: string | null;
+  phone: string | null;
+  website: string | null;
+};
+
+export type NearbyTransport = {
+  name: string;
+  transport_type: string;
+  distance_m: number;
+  latitude: number;
+  longitude: number;
+  source_record_id: string;
+};
+
+export type NearbyRoad = {
+  name: string | null;
+  road_type: string;
+  distance_m: number;
+  source_type: string;
+  source_record_id: string;
+};
+
+export type AnalysisCoverage = {
+  total_businesses: number;
+  named_business_percent: number;
+  missing_source_fields: Record<string, number>;
+};
+
+export type DatasetSnapshot = {
+  slug: string;
+  provider: string;
+  source_url: string;
+  license_name: string;
+  attribution: string;
+  observed_at: string | null;
+  retrieved_at: string;
+  sha256: string;
 };
 
 export type SearchResult = {
@@ -98,7 +191,10 @@ export type Analytics = {
   radius_m: number;
   scoring_version: string;
   dataset_fingerprint: string;
+  release_key: string;
+  taxonomy_version: string;
   category_counts: Array<{ category: BusinessCategory; count: number }>;
+  subtype_counts: Array<{ subtype: string; count: number }>;
   top_opportunities: Array<{
     area_id: number;
     area_name: string;
@@ -130,6 +226,9 @@ export type Methodology = {
   coverage: string;
   scoring_version: string;
   dataset_fingerprint: string;
+  release_key: string;
+  taxonomy_version: string;
+  tile_sha256: string | null;
   supported_radii_m: number[];
   representative_area_method: string;
   normalization: string;
@@ -137,6 +236,11 @@ export type Methodology = {
   categories: Array<{
     category: BusinessCategory;
     weights: Record<string, number>;
+  }>;
+  taxonomy_rules: Array<{
+    category: BusinessCategory;
+    subtype: string;
+    required_tags: Record<string, string>;
   }>;
   datasets: Array<{
     slug: string;
@@ -146,11 +250,12 @@ export type Methodology = {
     attribution: string;
     observed_at: string | null;
     retrieved_at: string;
+    sha256: string;
   }>;
   limitations: string[];
 };
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000/api";
+const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "/api";
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE}${path}`, options);
@@ -165,6 +270,10 @@ export function fetchCategories() {
   return request<Array<{ slug: BusinessCategory; business_count: number }>>(
     "/business-categories",
   );
+}
+
+export function fetchMapConfig() {
+  return request<MapConfig>("/map-config");
 }
 
 export async function fetchBusinesses(category: BusinessCategory) {

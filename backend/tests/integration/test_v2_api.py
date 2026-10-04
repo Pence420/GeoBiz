@@ -1,4 +1,5 @@
 from datetime import UTC, datetime
+from pathlib import Path
 
 from fastapi.testclient import TestClient
 from sqlalchemy import select, text
@@ -11,6 +12,7 @@ from app.db.models import (
     DatasetSource,
 )
 from app.db.session import get_session
+from app.core.config import Settings, get_settings
 from app.main import app
 from app.releases.service import activate_release, create_staging_release
 
@@ -121,6 +123,30 @@ def test_map_config_and_refresh_status_use_active_release(db_session: Session) -
     status = status_response.json()
     assert status["active"]["release_key"] == release.release_key
     assert "trigger_url" not in status
+
+
+def test_active_pmtiles_artifact_supports_byte_ranges(
+    db_session: Session, tmp_path: Path
+) -> None:
+    release = _activate_v2(db_session)
+    artifact = tmp_path / str(release.tile_filename)
+    artifact.write_bytes(b"PMTiles\x03" + b"vector archive")
+    app.dependency_overrides[get_session] = lambda: db_session
+    app.dependency_overrides[get_settings] = lambda: Settings(tile_root=tmp_path)
+    client = TestClient(app)
+    try:
+        response = client.get(
+            f"/tiles/releases/{release.tile_filename}",
+            headers={"Range": "bytes=0-7"},
+        )
+        hidden = client.get("/tiles/releases/not-active.pmtiles")
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 206
+    assert response.content == b"PMTiles\x03"
+    assert response.headers["accept-ranges"] == "bytes"
+    assert hidden.status_code == 404
 
 
 def test_v2_analytics_and_methodology_are_release_scoped(db_session: Session) -> None:

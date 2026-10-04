@@ -3,17 +3,23 @@ import type { FeatureCollection } from "geojson";
 import * as maplibregl from "maplibre-gl";
 import type { GeoJSONSource, MapLayerMouseEvent, MapMouseEvent } from "maplibre-gl";
 import workerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url";
+import { Protocol } from "pmtiles";
 import "maplibre-gl/dist/maplibre-gl.css";
 
 import type {
   BusinessCategory,
   BusinessFeature,
+  MapConfig,
   MapLayerFeature,
 } from "../lib/api";
+import { localStyle } from "../map/localStyle";
 
 maplibregl.setWorkerUrl(workerUrl);
+const pmtilesProtocol = new Protocol();
+maplibregl.addProtocol("pmtiles", pmtilesProtocol.tile);
 
 type Props = {
+  mapConfig: MapConfig;
   businesses: BusinessFeature[];
   category: BusinessCategory;
   selectedLocation: { longitude: number; latitude: number };
@@ -40,12 +46,13 @@ type Props = {
 };
 
 const categoryColors: Record<BusinessCategory, string> = {
-  restaurant: "#3157e8",
-  gym: "#111318",
-  pharmacy: "#1f9d73",
+  fnb: "#3157e8",
+  retail: "#111318",
+  services: "#1f9d73",
 };
 
 export function GeoMap({
+  mapConfig,
   businesses,
   category,
   selectedLocation,
@@ -65,6 +72,9 @@ export function GeoMap({
   const [mapError, setMapError] = useState<string | null>(null);
   const [mapLoaded, setMapLoaded] = useState(false);
   const [retryNonce, setRetryNonce] = useState(0);
+  const [onlineFallback, setOnlineFallback] = useState(
+    mapConfig.mode === "online_fallback",
+  );
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
@@ -72,7 +82,9 @@ export function GeoMap({
     setMapLoaded(false);
     const map = new maplibregl.Map({
       container: containerRef.current,
-      style: "https://tiles.openfreemap.org/styles/liberty",
+      style: onlineFallback
+        ? "https://tiles.openfreemap.org/styles/liberty"
+        : localStyle(mapConfig),
       center: [106.8272, -6.2],
       zoom: 10.7,
       minZoom: 9,
@@ -306,7 +318,7 @@ export function GeoMap({
       map.remove();
       mapRef.current = null;
     };
-  }, [onSelectLocation, retryNonce]);
+  }, [mapConfig, onSelectLocation, onlineFallback, retryNonce]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -382,10 +394,16 @@ export function GeoMap({
       >
         Reset Jakarta
       </button>
+      <span className={`map-mode-badge ${onlineFallback ? "fallback" : "offline"}`}>
+        {onlineFallback ? "Online fallback" : "Offline map"}
+      </span>
       {mapError ? (
         <div className="map-error" role="alert">
           <span>Peta dasar gagal dimuat: {mapError}</span>
-          <button type="button" onClick={() => setRetryNonce((value) => value + 1)}>Retry map</button>
+          {mapConfig.fallback_available && !onlineFallback ? (
+            <button type="button" onClick={() => { setMapError(null); setOnlineFallback(true); }}>Use online fallback</button>
+          ) : null}
+          <button type="button" onClick={() => { setMapError(null); setOnlineFallback(mapConfig.mode === "online_fallback"); setRetryNonce((value) => value + 1); }}>Retry map</button>
         </div>
       ) : null}
     </div>

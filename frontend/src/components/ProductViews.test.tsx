@@ -25,14 +25,14 @@ beforeEach(() => {
       }
       if (url.includes("/analytics")) {
         return Response.json({
-          business_category: "restaurant",
+          business_category: "fnb",
           radius_m: 1000,
           scoring_version: "v1.0.0",
           dataset_fingerprint: "real-data-fingerprint",
           category_counts: [
-            { category: "restaurant", count: 1826 },
-            { category: "gym", count: 53 },
-            { category: "pharmacy", count: 305 },
+            { category: "fnb", count: 1826 },
+            { category: "retail", count: 53 },
+            { category: "services", count: 305 },
           ],
           top_opportunities: [{ area_id: 1, area_name: "SENAYAN", final_score: 88.2, label: "High" }],
           score_distribution: [{ label: "High", minimum: 81, maximum: 100, area_count: 1 }],
@@ -49,9 +49,9 @@ beforeEach(() => {
         normalization: "DKI-wide percentile normalization.",
         factor_definitions: { population_density: "Official residents per square kilometre." },
         categories: [
-          { category: "restaurant", weights: { population_density: 1 } },
-          { category: "gym", weights: { population_density: 1 } },
-          { category: "pharmacy", weights: { population_density: 1 } },
+          { category: "fnb", weights: { population_density: 1 } },
+          { category: "retail", weights: { population_density: 1 } },
+          { category: "services", weights: { population_density: 1 } },
         ],
         datasets: [{
           slug: "osm-businesses",
@@ -79,7 +79,7 @@ describe("PRD product views", () => {
   });
 
   it("renders evidence-based analytics without fabricated revenue metrics", async () => {
-    render(<AnalyticsView category="restaurant" radius={1000} onCategoryChange={vi.fn()} onRadiusChange={vi.fn()} />);
+    render(<AnalyticsView category="fnb" radius={1000} onCategoryChange={vi.fn()} onRadiusChange={vi.fn()} />);
     expect(await screen.findByText("1.826")).toBeVisible();
     expect(screen.getAllByText("SENAYAN").length).toBeGreaterThan(0);
     expect(screen.queryByText(/^Revenue$/i)).not.toBeInTheDocument();
