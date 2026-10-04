@@ -71,7 +71,12 @@ def download_source(
         request_headers["If-None-Match"] = previous_etag
     if previous_last_modified:
         request_headers["If-Modified-Since"] = previous_last_modified
-    request = Request(str(source.url), headers=request_headers)
+    request = Request(
+        str(source.url),
+        data=b"" if source.method == "POST" else None,
+        headers=request_headers,
+        method=source.method,
+    )
     opener = opener or build_opener(SafeRedirectHandler(allowed_hosts))
 
     partial_path: Path | None = None

@@ -124,6 +124,22 @@ def build_parser() -> argparse.ArgumentParser:
         "--config", type=Path, default=DEFAULT_REFRESH_CONFIG
     )
 
+    local_prepare = commands.add_parser(
+        "refresh-prepare-local",
+        help="prepare v2 from retained source files and checksum manifests",
+    )
+    local_prepare.add_argument("--release-key", required=True)
+    local_prepare.add_argument("--config", type=Path, default=DEFAULT_REFRESH_CONFIG)
+    local_prepare.add_argument("--osm", type=Path, required=True)
+    local_prepare.add_argument("--osm-manifest", type=Path, required=True)
+    local_prepare.add_argument("--boundary", type=Path, required=True)
+    local_prepare.add_argument("--boundary-manifest", type=Path, required=True)
+    local_prepare.add_argument("--gtfs", type=Path, required=True)
+    local_prepare.add_argument("--gtfs-manifest", type=Path, required=True)
+    local_prepare.add_argument("--population", type=Path, required=True)
+    local_prepare.add_argument("--population-manifest", type=Path, required=True)
+    local_prepare.add_argument("--accept-count-change", action="store_true")
+
     refresh_fail = commands.add_parser(
         "refresh-fail", help="record failure for an incomplete prepared release"
     )
@@ -337,6 +353,25 @@ def main() -> None:
         with SessionLocal() as session:
             result = orchestrator.prepare_offline_map(
                 session, release_key=args.release_key
+            )
+            session.commit()
+        print(result.model_dump_json(indent=2))
+        return
+
+    if args.command == "refresh-prepare-local":
+        orchestrator = RefreshOrchestrator(
+            RefreshConfig.load(args.config), build_default_hooks()
+        )
+        source_paths = {
+            role: (getattr(args, role), getattr(args, f"{role}_manifest"))
+            for role in ("osm", "boundary", "gtfs", "population")
+        }
+        with SessionLocal() as session:
+            result = orchestrator.prepare_local_snapshots(
+                session,
+                release_key=args.release_key,
+                source_paths=source_paths,
+                accept_count_change=args.accept_count_change,
             )
             session.commit()
         print(result.model_dump_json(indent=2))

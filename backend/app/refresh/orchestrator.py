@@ -19,6 +19,7 @@ from app.db.models import DataRelease
 from app.db.models import AdministrativeArea, Business, BusinessCategory, Poi, Road, TransportStop
 from app.imports.administrative import boundary_geometry
 from app.imports.contracts import ImportManifest
+from app.imports.manifest import load_verified_manifest
 from app.imports.gtfs import filter_gtfs_to_boundary, parse_gtfs_stops
 from app.imports.promotion import (
     promote_dki_boundary,
@@ -369,6 +370,96 @@ class RefreshOrchestrator:
                 expected_tile_path=str(expected_tile),
             )
         except Exception:
+            if workspace is not None and workspace.exists():
+                shutil.rmtree(workspace)
+            raise
+        finally:
+            self.unlock(session)
+
+    def prepare_local_snapshots(
+        self,
+        session: Session,
+        *,
+        release_key: str,
+        source_paths: dict[str, tuple[Path, Path]],
+        accept_count_change: bool,
+    ) -> PreparedRelease:
+        """Prepare a release from retained checksum manifests without networking."""
+        self._validate_release_key(release_key)
+        if not self.lock(session):
+            raise RefreshBusyError("another GeoBiz refresh phase is running")
+        workspace: Path | None = None
+        release: DataRelease | None = None
+        try:
+            self._preflight()
+            if session.scalar(select(DataRelease).where(DataRelease.status.in_(("staging", "validated")))):
+                raise RefreshStateError("another release is already being prepared")
+            workspace = self.config.workspace_root / release_key
+            if workspace.exists():
+                raise RefreshStateError("release workspace already exists")
+            raw_dir = workspace / "raw"
+            manifest_dir = workspace / "manifests"
+            raw_dir.mkdir(parents=True)
+            manifest_dir.mkdir(parents=True)
+            paths: dict[str, Path] = {}
+            manifests: dict[str, Path] = {}
+            source_entries: list[dict[str, Any]] = []
+            for role in ("osm", "boundary", "gtfs", "population"):
+                raw_source, manifest_source = source_paths[role]
+                verified = load_verified_manifest(manifest_source, raw_source)
+                raw_target = raw_dir / self.config.source_for_role(role).filename
+                manifest_target = manifest_dir / f"{role}.json"
+                try:
+                    os.link(raw_source, raw_target)
+                except OSError:
+                    shutil.copy2(raw_source, raw_target)
+                shutil.copy2(manifest_source, manifest_target)
+                paths[role] = raw_target
+                manifests[role] = manifest_target
+                source_entries.append({**verified.model_dump(mode="json"), "role": role})
+            fingerprint_payload = [
+                (entry["role"], entry["dataset_slug"], entry["sha256"])
+                for entry in sorted(source_entries, key=lambda item: item["role"])
+            ]
+            inputs = PreparedInputs(
+                dataset_fingerprint=hashlib.sha256(
+                    json.dumps(fingerprint_payload, separators=(",", ":")).encode()
+                ).hexdigest(),
+                combined_manifest={"sources": source_entries, "source_mode": "retained-verified"},
+                verified_pbf_path=paths["osm"],
+                boundary_path=paths["boundary"],
+                staged={"paths": paths, "manifests": manifests, "config": self.config},
+            )
+            self.hooks.validate(inputs, accept_count_change)
+            self._validate_count_changes(session, inputs, accept_count_change=accept_count_change)
+            expected_tile = self.config.tile_root / f"{release_key}.pmtiles"
+            manifest = {
+                **inputs.combined_manifest,
+                "release_key": release_key,
+                "dataset_fingerprint": inputs.dataset_fingerprint,
+                "taxonomy_version": self.config.taxonomy_version,
+                "scoring_version": self.config.scoring_version,
+                "workspace_path": str(workspace),
+                "verified_pbf_path": str(inputs.verified_pbf_path),
+                "boundary_path": str(inputs.boundary_path),
+                "expected_tile_path": str(expected_tile),
+            }
+            release = create_staging_release(session, manifest)
+            with session.begin_nested():
+                self.hooks.promote(session, release.id, inputs)
+            release.status = "validated"
+            release.validated_at = datetime.now(UTC)
+            session.flush()
+            return self._prepared_result(release_key, "validated", workspace, inputs, expected_tile)
+        except Exception as error:
+            if release is not None:
+                fail_release(session, release.id, phase="prepare_local", message=str(error))
+                return PreparedRelease(
+                    release_key=release_key,
+                    status="failed",
+                    workspace=str(workspace) if workspace else None,
+                    failure=release.failure,
+                )
             if workspace is not None and workspace.exists():
                 shutil.rmtree(workspace)
             raise

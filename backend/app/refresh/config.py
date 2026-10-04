@@ -1,7 +1,7 @@
 from datetime import date
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, HttpUrl, model_validator
 
@@ -17,6 +17,7 @@ class SourceConfig(BaseModel):
     max_bytes: int = Field(gt=0)
     observed_at: date | None = None
     request_parameters: dict[str, Any] | None = None
+    method: Literal["GET", "POST"] = "GET"
 
     @model_validator(mode="after")
     def source_host_is_allowed(self) -> "SourceConfig":
@@ -37,3 +38,6 @@ class RefreshConfig(BaseModel):
     @classmethod
     def load(cls, path: Path) -> "RefreshConfig":
         return cls.model_validate(json.loads(path.read_text(encoding="utf-8")))
+
+    def source_for_role(self, role: str) -> SourceConfig:
+        return next(source for source in self.sources if source.role == role)

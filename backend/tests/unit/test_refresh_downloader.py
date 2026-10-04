@@ -136,3 +136,13 @@ def test_download_304_returns_unchanged_and_sends_conditionals(tmp_path: Path) -
 def test_source_host_must_be_allow_listed() -> None:
     with pytest.raises(ValueError, match="allowed_hosts"):
         _source(allowed_hosts=["example.com"])
+
+
+def test_download_can_use_post_for_read_only_public_api(tmp_path: Path) -> None:
+    opener = FakeOpener(FakeResponse(b'{"success":true}', url=str(_source().url)))
+
+    download_source(_source(method="POST"), tmp_path, opener=opener)
+
+    assert opener.request is not None
+    assert opener.request.get_method() == "POST"
+    assert opener.request.data == b""

@@ -42,6 +42,7 @@
       "source_name": "Data Penduduk Provinsi DKI Jakarta Menurut Jenis Kelamin dan Rasio Jenis Kelamin",
       "url": "https://satudata.jakarta.go.id/backend/api/v2/satudata/get-table-data?page_url=data-penduduk-provinsi-dki-jakarta-menurut-jenis-kelamin-dan-rasio-jenis-kelamin&periode_data=2025&per_page=5000",
       "allowed_hosts": ["satudata.jakarta.go.id"],
+      "method": "POST",
       "license_name": "Satu Data Jakarta public open data",
       "filename": "dki-population-2025.json",
       "max_bytes": 67108864,
