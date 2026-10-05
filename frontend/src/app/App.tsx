@@ -9,8 +9,6 @@ import {
   type CSSProperties,
 } from "react";
 
-import { AnalyticsView } from "../components/AnalyticsView";
-import { MethodologyView } from "../components/MethodologyView";
 import { NearbyEvidence } from "../components/NearbyEvidence";
 import { SearchBox } from "../components/SearchBox";
 import {
@@ -33,6 +31,12 @@ import {
 
 const GeoMap = lazy(() =>
   import("../components/GeoMap").then((module) => ({ default: module.GeoMap })),
+);
+const AnalyticsView = lazy(() =>
+  import("../components/AnalyticsView").then((module) => ({ default: module.AnalyticsView })),
+);
+const MethodologyView = lazy(() =>
+  import("../components/MethodologyView").then((module) => ({ default: module.MethodologyView })),
 );
 
 const DEFAULT_LOCATION = { latitude: -6.1754, longitude: 106.8272 };
@@ -560,16 +564,26 @@ export function App() {
         </section>
       </main> : null}
       {activeView === "analytics" ? (
-        <AnalyticsView
-          category={category}
-          radius={radius}
-          onCategoryChange={setCategory}
-          onRadiusChange={setRadius}
-        />
+        <Suspense fallback={<ViewLoading label="analytics" />}>
+          <AnalyticsView
+            category={category}
+            radius={radius}
+            onCategoryChange={setCategory}
+            onRadiusChange={setRadius}
+          />
+        </Suspense>
       ) : null}
-      {activeView === "methodology" ? <MethodologyView /> : null}
+      {activeView === "methodology" ? (
+        <Suspense fallback={<ViewLoading label="methodology" />}>
+          <MethodologyView />
+        </Suspense>
+      ) : null}
     </div>
   );
+}
+
+function ViewLoading({ label }: { label: string }) {
+  return <main className="content-view view-loading" role="status">Loading {label}…</main>;
 }
 
 function formatFactor(area: AreaRanking, factor: string) {

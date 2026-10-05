@@ -341,6 +341,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible
   .layer-panel { top: 10px; left: 10px; width: 132px; }
   .opportunity-legend { left: 10px; bottom: 10px; width: 230px; }
   .map-filter-panel { top: 10px; right: 10px; width: 145px; }
+  .map-mode-badge { top: auto; right: 10px; bottom: 124px; }
   .map-hint { flex-direction: column; }
   .insight-column { display: flex; }
   .table-row { grid-template-columns: 1.25fr 0.75fr; }
