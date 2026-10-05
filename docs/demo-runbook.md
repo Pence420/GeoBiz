@@ -1,99 +1,86 @@
 # GeoBiz academic demo runbook
 
-This runbook reproduces and verifies the DKI Jakarta MVP without a paid service.
-It assumes Docker Desktop or Colima is running and ports 5173, 8000, and 5432 are
-available.
+This runbook presents and verifies GeoBiz v2 for DKI Jakarta without a paid
+service. Docker must be running and ports 5173, 8000, 3000, and 5432 available.
 
-## 1. Start the stack
+## 1. Start and check the stack
 
 ```bash
 cp .env.example .env
 docker compose up -d --build
 make migrate
+make refresh-status
 ```
 
-The dashboard is at <http://localhost:5173>, API documentation is at
-<http://localhost:8000/docs>, and the health check is at
-<http://localhost:8000/api/health>.
+Open <http://localhost:5173>. The API documentation is at
+<http://localhost:8000/docs> and the health endpoint at
+<http://localhost:8000/api/health>. The active status must show taxonomy and
+scoring `v2.0.0`, a dataset fingerprint, tile filename, and tile SHA-256.
 
-## 2. Reproduce the real data snapshot
+If no v2 release is active, follow [`data-refresh-runbook.md`](data-refresh-runbook.md).
 
-Raw source files are intentionally excluded from Git because they are large.
-Download the files named by the committed manifests and follow the complete,
-checksum-verified promotion commands in [`../data/README.md`](../data/README.md).
-The order is: businesses and boundary, official TransJakarta GTFS, contextual
-OpenStreetMap POIs and roads, official population, normalization profiles, then
-opportunity scores.
-
-After promotion, generate derived records:
+## 2. Verify before presenting
 
 ```bash
-make profiles
-make opportunities
-```
-
-Do not insert invented names or coordinates. Synthetic fixtures belong only in
-the isolated automated-test transactions.
-
-## 3. Verify before presenting
-
-```bash
-make test
-make build-frontend
-make lint
 docker compose config --quiet
+docker compose run --rm backend pytest -q
+docker compose run --rm frontend npm test -- --run
+docker compose run --rm frontend npm run lint
+docker compose run --rm frontend npm run build
+make e2e
 ```
 
-The integration suite enforces these demo invariants:
+The integrity suite requires three non-empty umbrella categories, complete
+source/taxonomy/subtype identity, valid DKI geometry, no synthetic provider,
+267 populated kelurahan, 15 profiles, and 4,005 opportunity scores. Actual
+category/subtype counts are printed as evidence rather than frozen as invented
+targets. Browser E2E uses the live promoted database and includes a zero-external-
+request offline scenario.
 
-- exactly 1,826 restaurant, 53 gym, and 305 pharmacy records in the promoted snapshot;
-- every business has a source identity and valid DKI geometry;
-- no provider is named fake, fixture, synthetic, or seed;
-- 267 population-matched kelurahan;
-- all 15 category/radius opportunity scopes are complete.
+## 3. Presentation flow
 
-## 4. Suggested presentation flow
+1. Open **Map explorer** and point out the **Offline map** badge and OSM attribution.
+2. Switch among **F&B**, **Retail**, and **Services**.
+3. Search **SENAYAN**, then inspect a real business from the map/table popup; show
+   its OSM element type and record ID.
+4. Change radius and toggle opportunity, competitors, heatmap, population,
+   transit, commercial, education, offices, and road network.
+5. Explain the location score, factor weights, nearby subtype mix, closest named
+   evidence, missing-data handling, and dataset fingerprint.
+6. Filter ranked kelurahan and pin exactly three for comparison.
+7. Open **Analytics** for category totals, subtype composition, score distribution,
+   and all 267 representative observations.
+8. Open **Methodology** for taxonomy rules, source URLs, licences, checksums,
+   scoring version, fingerprint, and interpretation limits.
 
-1. Open **Map explorer** and show the OpenFreeMap attribution.
-2. Switch between Restaurant, Gym, and Pharmacy; explain that all points retain
-   their OpenStreetMap identity.
-3. Toggle competitor clusters, heatmap, population, opportunity, transit,
-   commercial, education, offices, and road network.
-4. Search for an area/business or enter a coordinate, then click the map to
-   recalculate the radius analysis.
-5. Change radius and explain the live spatial counts, normalized factors, and
-   incomplete-data behavior.
-6. Filter opportunity areas, open a ranked representative point, and pin up to
-   three areas for comparison.
-7. Open **Analytics** for score distribution and population-versus-competition.
-8. Open **Methodology** to show source URLs, licences, retrieval dates, scoring
-   version, dataset fingerprint, weights, and limitations.
+## 4. Interpretation limits
 
-## 5. Interpretation limits
+- OpenStreetMap completeness varies and is not a commercial census.
+- Population is a verified annual kelurahan aggregate, not real-time footfall.
+- Each kelurahan score uses one in-polygon representative point and does not
+  claim uniform suitability across the polygon.
+- Scores support comparative screening; they do not predict or guarantee success.
+- The population source remains pinned to verified period 2025 until a newer
+  official period passes the same validation workflow.
 
-- OpenStreetMap completeness varies and its POIs are not a commercial census.
-- Population is an annual kelurahan aggregate, not real-time footfall.
-- Each kelurahan score is calculated at one in-polygon representative point; it
-  does not assert uniform suitability across the polygon.
-- The score supports initial screening and is not a prediction or guarantee of
-  business success.
+## 5. Cost and offline behavior
 
-## 6. Cost and external dependencies
+The default demo reads its basemap, labels, businesses, and analysis from local
+Docker services. No Google Maps key, paid tiles, subscription API, auth provider,
+payment system, or billing configuration is used. The optional online map fallback
+is a recovery control and is not needed for the offline acceptance test.
 
-GeoBiz uses PostgreSQL/PostGIS, FastAPI, React, MapLibre GL JS, and the public
-OpenFreeMap style. There is no Google Maps key, subscription API, authentication,
-payment system, or billing configuration. Internet access is only needed to load
-the public basemap in the browser; analysis data remains in the local database.
+## 6. Troubleshooting
 
-## 7. Troubleshooting
-
-- **Opportunity API returns 409:** run `make profiles` followed by
-  `make opportunities` after all datasets are promoted.
-- **Basemap is blank:** confirm internet access, use **Retry map**, or continue
-  demonstrating the analysis panels; the local results remain available.
-- **Port conflict:** change the host-side port in `compose.yaml`, then update
-  `VITE_API_BASE_URL` when changing the API port.
-- **Stale results after importing data:** regenerate profiles and opportunities;
-  both are bound to the combined dataset fingerprint.
-- **Reset only application containers:** use `docker compose down`. Do not add
-  `-v` unless you intentionally want to delete the local Postgres volume.
+- **Configuration unavailable / 404:** restart the backend after source changes:
+  `docker compose restart backend`.
+- **Hostname blocked in Docker E2E:** ensure `frontend` remains in Vite's explicit
+  `server.allowedHosts` list.
+- **Tile error:** confirm the active release's PMTiles exists, restart `tiles`, run
+  `verify-tile-service`, then use **Retry map**.
+- **Opportunity API returns 409:** the release is incomplete or v1; prepare and
+  activate a complete v2 release rather than generating unversioned records.
+- **Source download fails:** keep the active release; inspect the official endpoint
+  and use the retained checksum-verified workflow only when its manifests match.
+- **Reset containers:** `docker compose down` preserves data. Do not add `-v`
+  unless intentionally deleting the Postgres volume.

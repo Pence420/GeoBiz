@@ -1,79 +1,100 @@
 # GeoBiz data workspace
 
-GeoBiz demo data must come from traceable real-world sources. Raw and processed artifacts are intentionally ignored by Git because they can be large and are reproducible from the committed query and manifest metadata.
+GeoBiz promotes only traceable real-world data. Large raw and generated files
+are ignored by Git; committed manifests and `data/sources/geobiz-v2.json` make
+their origin and validation rules reviewable.
+
+## v2 sources
+
+| Role | Provider | Use |
+| --- | --- | --- |
+| OSM extract | OpenStreetMap / download.openstreetmap.fr | F&B, Retail, Services, contextual POIs, roads, and vector basemap |
+| DKI boundary | OpenStreetMap via Nominatim | geographic clipping and coverage validation |
+| GTFS | PT Transportasi Jakarta | TransJakarta stops |
+| Population | Satu Data Jakarta / Dukcapil DKI | kelurahan population and density |
+
+OpenStreetMap remains attributed as `© OpenStreetMap contributors` under ODbL.
+The population snapshot is pinned to the verified 2025 period until a newer
+official period is configured, downloaded, and checksum-validated. A source
+endpoint changing method, schema, or period must fail the refresh; it must not
+silently reuse or invent rows.
 
 Rules:
 
 - Never add invented businesses, names, coordinates, or competitor counts.
-- Save raw downloads under `data/raw/`.
-- Commit the source URL, query, retrieval time, source snapshot time, licence, checksum, and aggregate quality report under `data/manifests/`.
-- Keep OpenStreetMap attribution visible in the application: `© OpenStreetMap contributors`.
-- Test-only synthetic fixtures belong under `backend/tests/fixtures/` and must never be promoted to the demo database.
+- Raw downloads go under `data/raw/`; isolated runs go under `data/refresh/`.
+- PMTiles archives go under `data/tiles/releases/` and are immutable per release.
+- Every promoted row retains release, source, and source-record identity.
+- Synthetic fixtures stay under `backend/tests/fixtures/` and are never promoted.
 
-The initial business snapshot uses the daily Jakarta `.osm.pbf` extract from
-`download.openstreetmap.fr`. The saved Overpass queries remain a smaller-source
-fallback. Both paths are offline imports only and are never called by user requests.
-
-## Reproduce the 2026-09-29 business snapshot
-
-Download the raw files named by the committed manifests into `data/raw/`, then run:
+## Online refresh
 
 ```bash
-docker compose run --rm backend python -m app.imports.cli stage-osm \
-  /data/raw/jakarta.osm.pbf \
-  --manifest /data/manifests/osm-dki-businesses-2026-09-29.json \
-  --boundary /data/raw/dki-boundary.geojson \
-  --boundary-manifest /data/manifests/osm-dki-boundary-2026-09-29.json \
-  --output /data/processed/osm-dki-businesses.staged.json \
-  --report /data/manifests/osm-dki-businesses-2026-09-29.quality.json
-
-docker compose run --rm backend python -m app.imports.cli promote-osm \
-  /data/processed/osm-dki-businesses.staged.json \
-  --raw /data/raw/jakarta.osm.pbf \
-  --manifest /data/manifests/osm-dki-businesses-2026-09-29.json
-
-docker compose run --rm backend python -m app.imports.cli promote-boundary \
-  /data/raw/dki-boundary.geojson \
-  --manifest /data/manifests/osm-dki-boundary-2026-09-29.json
-
-docker compose run --rm backend python -m app.imports.cli promote-gtfs \
-  /data/raw/transjakarta-gtfs.zip \
-  --manifest /data/manifests/transjakarta-gtfs-2026-07-24.json \
-  --boundary /data/raw/dki-boundary.geojson \
-  --boundary-manifest /data/manifests/osm-dki-boundary-2026-09-29.json \
-  --report /data/manifests/transjakarta-gtfs-2026-07-24.quality.json
-
-docker compose run --rm backend python -m app.imports.cli promote-osm-context \
-  /data/raw/jakarta.osm.pbf \
-  --manifest /data/manifests/osm-dki-context-2026-09-29.json \
-  --boundary /data/raw/dki-boundary.geojson \
-  --boundary-manifest /data/manifests/osm-dki-boundary-2026-09-29.json \
-  --report /data/manifests/osm-dki-context-2026-09-29.quality.json
-
-docker compose run --rm backend python -m app.imports.cli promote-population \
-  /data/raw/dki-population-2025.json \
-  --manifest /data/manifests/satudata-dki-population-2025.json \
-  --osm-raw /data/raw/jakarta.osm.pbf \
-  --geometry-manifest /data/manifests/osm-dki-kelurahan-2026-09-29.json \
-  --boundary /data/raw/dki-boundary.geojson \
-  --boundary-manifest /data/manifests/osm-dki-boundary-2026-09-29.json \
-  --aliases /data/crosswalks/dki_kelurahan_aliases.csv \
-  --report /data/manifests/satudata-dki-population-2025.quality.json
-
-docker compose run --rm backend python -m app.imports.cli generate-profiles \
-  --version v1.0.0 \
-  --grid-size-m 1000
-
-docker compose run --rm backend python -m app.imports.cli generate-opportunities \
-  --version v1.0.0
+make refresh-data-dry-run
+make refresh-status
+make refresh-data
 ```
 
-Promotion replaces the previous snapshot from the same dataset source inside one
-database transaction. A checksum mismatch, missing category, invalid geometry,
-duplicate source identity, or other failed quality gate aborts the whole batch.
-Normalization profiles are generated only after every source has been promoted.
-They are bound to the exact combined dataset fingerprint so stale percentiles cannot
-silently score newer data. Opportunity scores are then generated for all 267
-kelurahan, all three categories, and all five supported radii. Each score uses an
-in-polygon representative point (`ST_PointOnSurface`) and retains its raw and
-normalized factors; it does not claim that one score is uniform across the polygon.
+The dry run downloads and validates in an isolated temporary workspace without
+creating or activating a release. The full run creates a unique release key,
+builds PMTiles from that release's verified PBF, checks the tile catalog and
+representative DKI tiles, derives profiles/opportunities, and activates in one
+database transaction.
+
+Counts are compared with the active release. A decrease over 30% or increase
+over 100% in an umbrella category or primary supporting dataset stops the run.
+After reviewing the quality output and confirming a legitimate source/taxonomy
+change, explicitly approve it with:
+
+```bash
+make refresh-data ACCEPT_COUNT_CHANGE=1
+```
+
+## Prepare from retained verified snapshots
+
+This network-free preparation path is useful for the academic demo when the
+official endpoint is temporarily unavailable. It verifies every raw file against
+its committed manifest before staging; it does not bypass data quality gates.
+
+```bash
+docker compose run --rm backend python -m app.imports.cli refresh-prepare-local \
+  --release-key demo-v2-YYYYMMDD \
+  --osm /data/raw/jakarta.osm.pbf \
+  --osm-manifest /data/manifests/osm-dki-businesses-2026-09-29.json \
+  --boundary /data/raw/dki-boundary.geojson \
+  --boundary-manifest /data/manifests/osm-dki-boundary-2026-09-29.json \
+  --gtfs /data/raw/transjakarta-gtfs.zip \
+  --gtfs-manifest /data/manifests/transjakarta-gtfs-2026-07-24.json \
+  --population /data/raw/dki-population-2025.json \
+  --population-manifest /data/manifests/satudata-dki-population-2025.json
+```
+
+The command prints the exact PBF input and expected PMTiles output. Build the
+tile with the pinned tilemaker service, verify it with `verify-tile-service`,
+then activate with `refresh-activate`. The complete safe sequence is documented
+in [`../docs/data-refresh-runbook.md`](../docs/data-refresh-runbook.md).
+
+## Quality invariants
+
+A v2 release cannot activate unless:
+
+- F&B, Retail, and Services are all non-empty;
+- every business has subtype, taxonomy version, source type/ID, and valid DKI geometry;
+- duplicate source identities and prohibited synthetic providers are zero;
+- exactly 267 kelurahan have population density;
+- exactly 15 normalization scopes and 4,005 opportunity observations exist;
+- scoring weights total 1.0 per category;
+- the PMTiles checksum is recorded and representative tiles are readable.
+
+The current verified snapshot reports 3,415 F&B, 2,145 Retail, and 774 Services
+records. These are evidence printed by the integrity test, not hard-coded future
+targets: legitimate public-source updates may change them after passing the gates.
+
+## Storage and retention
+
+A local v2 run needs at least 2 GB free before preparation. Tilemaker can use
+several GB temporarily under `data/tiles/tmp/`; PMTiles and PBF artifacts are
+typically tens to hundreds of MB. Keep the active release, its immediate rollback
+release, and at most one older superseded release by default. Never prune an
+active release, the immediate rollback target, or any referenced tile/PBF. Review
+`make refresh-status` and database references before manual cleanup.
