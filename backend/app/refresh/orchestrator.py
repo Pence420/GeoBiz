@@ -28,7 +28,12 @@ from app.imports.promotion import (
     promote_osm_records,
     promote_population_areas,
 )
-from app.imports.staging import stage_osm_context, stage_osm_pbf, stage_population_areas
+from app.imports.staging import (
+    read_source_json,
+    stage_osm_context,
+    stage_osm_pbf,
+    stage_population_areas,
+)
 from app.refresh.downloader import download_source
 from app.refresh.config import RefreshConfig
 from app.releases.service import activate_release, create_staging_release, fail_release
@@ -719,7 +724,7 @@ def _stage_and_validate_sources(
         paths["osm"], manifests["osm"], paths["boundary"], manifests["boundary"]
     )
     geometry = boundary_geometry(
-        json.loads(paths["boundary"].read_text(encoding="utf-8"))
+        read_source_json(paths["boundary"])
     )
     gtfs_records, gtfs_report = filter_gtfs_to_boundary(
         parse_gtfs_stops(paths["gtfs"]), geometry
@@ -755,9 +760,7 @@ def _stage_and_validate_sources(
             "boundary_manifest": ImportManifest.model_validate_json(
                 manifests["boundary"].read_text(encoding="utf-8")
             ),
-            "boundary_payload": json.loads(
-                paths["boundary"].read_text(encoding="utf-8")
-            ),
+            "boundary_payload": read_source_json(paths["boundary"]),
             "counts": {
                 **businesses.quality_report.category_counts,
                 "transport_stops": len(gtfs_records),

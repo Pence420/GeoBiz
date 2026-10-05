@@ -30,7 +30,7 @@ docker compose run --rm tilemaker \
   --store "/data/tiles/tmp/${release_key}" \
   --skip-integrity
 mv -- "$partial_tile" "$final_tile"
-docker compose up -d tiles
+docker compose restart tiles
 docker compose run --rm backend python -m app.imports.cli verify-tile-service \
   --release-key "$release_key"
 docker compose run --rm backend python -m app.imports.cli refresh-activate \

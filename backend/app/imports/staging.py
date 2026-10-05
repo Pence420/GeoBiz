@@ -47,6 +47,11 @@ class OsmStagingBatch(BaseModel):
     quality_report: ImportQualityReport
 
 
+def read_source_json(path: Path) -> object:
+    """Decode public JSON/GeoJSON while accepting an optional UTF-8 BOM."""
+    return json.loads(path.read_text(encoding="utf-8-sig"))
+
+
 def stage_osm_pbf(
     raw_path: Path,
     manifest_path: Path,
@@ -83,11 +88,11 @@ def stage_osm_pbf(
             ],
             check=True,
         )
-        payload = json.loads(geojson_path.read_text(encoding="utf-8"))
+        payload = read_source_json(geojson_path)
 
     parsed_records = parse_osmium_geojson(payload)
     geometry = boundary_geometry(
-        json.loads(boundary_path.read_text(encoding="utf-8"))
+        read_source_json(boundary_path)
     )
     records, outside_count = filter_records_to_boundary(parsed_records, geometry)
     report = build_osm_quality_report(
@@ -160,13 +165,13 @@ def stage_osm_context(
         _run_osmium_export(poi_pbf, poi_geojson)
         _run_osmium_export(road_pbf, road_geojson, geometry_types="linestring")
         pois, _ = parse_osm_context_geojson(
-            json.loads(poi_geojson.read_text(encoding="utf-8"))
+            read_source_json(poi_geojson)
         )
         _, roads = parse_osm_context_geojson(
-            json.loads(road_geojson.read_text(encoding="utf-8"))
+            read_source_json(road_geojson)
         )
     geometry = boundary_geometry(
-        json.loads(boundary_path.read_text(encoding="utf-8"))
+        read_source_json(boundary_path)
     )
     kept_pois, kept_roads, report = filter_context_to_boundary(
         pois, roads, geometry
@@ -239,10 +244,10 @@ def stage_population_areas(
         _run_osmium_export(
             filtered_path, geojson_path, geometry_types="polygon"
         )
-        admin_payload = json.loads(geojson_path.read_text(encoding="utf-8"))
-    population_payload = json.loads(population_path.read_text(encoding="utf-8"))
+        admin_payload = read_source_json(geojson_path)
+    population_payload = read_source_json(population_path)
     province_geometry = boundary_geometry(
-        json.loads(province_boundary_path.read_text(encoding="utf-8"))
+        read_source_json(province_boundary_path)
     )
     populations = parse_population_records(population_payload, period="2025")
     boundaries = parse_kelurahan_boundaries(admin_payload, province_geometry)

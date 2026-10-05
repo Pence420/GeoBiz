@@ -10,10 +10,17 @@ def test_every_demo_business_is_traceable_and_spatially_valid(db_session) -> Non
                     SELECT id FROM data_releases WHERE status = 'active'
                   )
               AND (dataset_source_id IS NULL
+               OR nullif(source_type, '') IS NULL
                OR source_record_id IS NULL
+               OR nullif(business_subtype, '') IS NULL
+               OR taxonomy_version <> 'v2.0.0'
                OR retrieved_at IS NULL
                OR ST_IsValid(geom) = false
-               OR ST_IsEmpty(geom))
+               OR ST_IsEmpty(geom)
+               OR NOT ST_CoveredBy(
+                    geom,
+                    ST_MakeEnvelope(106.3, -6.8, 107.2, -5.0, 4326)
+               ))
             """
         )
     )
@@ -55,7 +62,26 @@ def test_all_supported_categories_have_real_coverage(db_session) -> None:
             """
         )
     ).all()
-    assert dict(rows) == {"gym": 53, "pharmacy": 305, "restaurant": 1826}
+    category_counts = dict(rows)
+    assert set(category_counts) == {"fnb", "retail", "services"}
+    assert all(count > 0 for count in category_counts.values())
+
+    subtype_counts = db_session.execute(
+        text(
+            """
+            SELECT category.slug, business.business_subtype, count(*)
+            FROM businesses AS business
+            JOIN business_categories AS category ON category.id = business.category_id
+            WHERE business.data_release_id = (
+                SELECT id FROM data_releases WHERE status = 'active'
+            )
+            GROUP BY category.slug, business.business_subtype
+            ORDER BY category.slug, business.business_subtype
+            """
+        )
+    ).all()
+    print(f"active v2 category counts: {category_counts}")
+    print(f"active v2 subtype counts: {subtype_counts}")
 
 
 def test_population_and_opportunity_coverage_is_complete(db_session) -> None:
@@ -86,5 +112,27 @@ def test_population_and_opportunity_coverage_is_complete(db_session) -> None:
             """
         )
     ).scalar_one()
+    profile_scopes = db_session.scalar(
+        text(
+            """
+            SELECT count(*) FROM normalization_profiles
+            WHERE data_release_id = (
+                SELECT id FROM data_releases WHERE status = 'active'
+            )
+            """
+        )
+    )
+    opportunity_scores = db_session.scalar(
+        text(
+            """
+            SELECT count(*) FROM opportunity_scores
+            WHERE data_release_id = (
+                SELECT id FROM data_releases WHERE status = 'active'
+            )
+            """
+        )
+    )
     assert populated_areas == 267
+    assert profile_scopes == 15
     assert opportunity_scopes == 15
+    assert opportunity_scores == 4_005
