@@ -45,6 +45,65 @@ operations and rollback.
 - Health check: <http://localhost:8000/api/health>
 - Tile service: <http://localhost:3000>
 
+## Run the same demo on another laptop
+
+A Git clone contains application code and source manifests, but not the populated
+PostgreSQL volume, raw source snapshots, or PMTiles archives. To show the **same
+verified release and real businesses** on another laptop, transfer a database
+dump and the local data files together. Use the same Git commit on both laptops.
+The commands below use a macOS/Linux shell (or WSL on Windows) and a fresh
+GeoBiz database on the receiving laptop. Docker must have internet access once
+to pull images and build the app; the running demo then uses the local map.
+
+On the laptop that already has the working demo, start Docker/Colima and GeoBiz,
+then run these commands from the repository root:
+
+```bash
+docker compose up -d db
+mkdir -p ../geobiz-demo-transfer
+docker compose exec -T db pg_dump -U geobiz -d geobiz -Fc \
+  > ../geobiz-demo-transfer/geobiz.dump
+tar -czf ../geobiz-demo-transfer/geobiz-data.tar.gz \
+  data/raw data/tiles/releases
+git rev-parse HEAD
+```
+
+Copy the `geobiz-demo-transfer` folder to the other laptop and note the printed
+commit. `geobiz.dump` contains the release-scoped business, area, and score
+records; the archive contains the matching raw sources and offline map files.
+Keep this transfer folder outside the Git repository and do not publish the dump.
+
+On the receiving laptop, install Docker Desktop (or Docker Engine with Compose),
+copy `geobiz-demo-transfer` next to where you will clone the project, and run:
+
+```bash
+git clone https://github.com/Pence420/GeoBiz.git
+cd GeoBiz
+git checkout COMMIT_SHA_FROM_EXPORT
+cp .env.example .env
+tar -xzf ../geobiz-demo-transfer/geobiz-data.tar.gz -C .
+docker compose up -d db
+docker compose exec -T db pg_restore -U geobiz -d geobiz \
+  --no-owner --no-acl --exit-on-error \
+  < ../geobiz-demo-transfer/geobiz.dump
+docker compose up -d --build backend tiles frontend
+curl -fsS http://localhost:8000/api/map-config
+```
+
+Open <http://localhost:5173>. The map-config response should show an active v2
+release with `mode: "offline"` and a `tile_url` whose PMTiles file exists under
+`data/tiles/releases/`. Do not run `make migrate` or `make refresh-data` when
+restoring this same-version dump: it already contains the schema and verified
+release. Replace `COMMIT_SHA_FROM_EXPORT` with the hash printed by `git rev-parse
+HEAD` on the source laptop. The transfer needs enough free disk space for the
+archive, restored files, database, and Docker images. If the receiving laptop
+has an existing GeoBiz database, back it up first and restore into a fresh
+Compose volume instead of merging datasets.
+
+For a new dataset rather than an identical demo, follow the regular setup above
+and run `make refresh-data`; this downloads and validates current public sources,
+so its records and availability can differ from the transferred snapshot.
+
 ## Verify
 
 ```bash
