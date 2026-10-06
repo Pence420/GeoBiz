@@ -35,6 +35,9 @@ const GeoMap = lazy(() =>
 const AnalyticsView = lazy(() =>
   import("../components/AnalyticsView").then((module) => ({ default: module.AnalyticsView })),
 );
+const DemographicsView = lazy(() =>
+  import("../components/DemographicsView").then((module) => ({ default: module.DemographicsView })),
+);
 const MethodologyView = lazy(() =>
   import("../components/MethodologyView").then((module) => ({ default: module.MethodologyView })),
 );
@@ -42,7 +45,7 @@ const MethodologyView = lazy(() =>
 const DEFAULT_LOCATION = { latitude: -6.1754, longitude: 106.8272 };
 const RADII = [500, 1000, 2000, 3000, 5000];
 type LayerKey = "opportunity" | "competitors" | "heatmap" | "population" | "transport" | "commercial" | "education" | "office" | "roads";
-type ViewKey = "overview" | "analytics" | "methodology";
+type ViewKey = "overview" | "analytics" | "demographics" | "methodology";
 
 const layerLabels: Record<LayerKey, string> = {
   opportunity: "Opportunity",
@@ -324,6 +327,7 @@ export function App() {
         <nav aria-label="Navigasi utama">
           <a className={`nav-link ${activeView === "overview" ? "active" : ""}`} href="#overview" onClick={() => setActiveView("overview")}>Map explorer</a>
           <a className={`nav-link ${activeView === "analytics" ? "active" : ""}`} href="#analytics" onClick={() => setActiveView("analytics")}>Analytics</a>
+          <a className={`nav-link ${activeView === "demographics" ? "active" : ""}`} href="#demographics" onClick={() => setActiveView("demographics")}>Demographics</a>
           <a className={`nav-link ${activeView === "methodology" ? "active" : ""}`} href="#methodology-view" onClick={() => setActiveView("methodology")}>Methodology</a>
         </nav>
         <div className="project-meta">
@@ -573,6 +577,11 @@ export function App() {
           />
         </Suspense>
       ) : null}
+      {activeView === "demographics" ? (
+        <Suspense fallback={<ViewLoading label="demographics" />}>
+          <DemographicsView releaseId={mapConfig.release_id} />
+        </Suspense>
+      ) : null}
       {activeView === "methodology" ? (
         <Suspense fallback={<ViewLoading label="methodology" />}>
           <MethodologyView />
@@ -593,6 +602,7 @@ function formatFactor(area: AreaRanking, factor: string) {
 
 function viewFromHash(): ViewKey {
   if (window.location.hash === "#analytics") return "analytics";
+  if (window.location.hash === "#demographics") return "demographics";
   if (window.location.hash === "#methodology-view") return "methodology";
   return "overview";
 }

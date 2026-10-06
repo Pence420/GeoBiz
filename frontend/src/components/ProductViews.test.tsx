@@ -2,6 +2,7 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AnalyticsView } from "./AnalyticsView";
+import { DemographicsView } from "./DemographicsView";
 import { MethodologyView } from "./MethodologyView";
 import { SearchBox } from "./SearchBox";
 
@@ -46,6 +47,26 @@ beforeEach(() => {
           population_competition: [{ area_name: "SENAYAN", population_density: 12000, competitor_count: 5, final_score: 88.2 }],
           coverage: [{ key: "business", label: "Business records", value: 2184, unit: "records", definition: "Traceable records." }],
         });
+      }
+      if (url.includes("/demographics")) {
+        return Response.json({
+          release_id: 2,
+          release_key: "release-20261004",
+          dataset_fingerprint: "real-data-fingerprint",
+          source_name: "satudata-dki-population-2025",
+          source_url: "https://satudata.jakarta.go.id/open-data/detail",
+          observed_at: "2025-12-31",
+          total_areas: 1,
+          covered_areas: 1,
+          total_population: 100,
+          male: 51,
+          female: 49,
+          age_gender: [{ age: "00-04", male: 51, female: 49, total: 100 }],
+          areas: [{ id: 1, name: "DURI PULO", wilayah: "JAKARTA PUSAT", kecamatan: "GAMBIR", population: 100, population_density: 10000, male: 51, female: 49 }],
+        });
+      }
+      if (url.includes("/layers/population")) {
+        return Response.json({ features: [{ id: 1, type: "Feature", properties: { name: "DURI PULO" }, geometry: { type: "Polygon", coordinates: [[[106.8, -6.2], [106.81, -6.2], [106.81, -6.21], [106.8, -6.2]]] } }] });
       }
       return Response.json({
         coverage: "DKI Jakarta",
@@ -120,5 +141,16 @@ describe("PRD product views", () => {
     expect(screen.getByText(/abcdef0123456789/)).toBeVisible();
     expect(screen.getByText("release-20261004")).toBeVisible();
     expect(screen.getByText(/real-data-fingerprint/)).toBeVisible();
+  });
+
+  it("renders only official resident demographics and its source", async () => {
+    render(<DemographicsView releaseId={2} />);
+    expect(await screen.findByText("DURI PULO: 100 penduduk; 10.000 jiwa/km²")).toBeInTheDocument();
+    expect(screen.getByText("51")).toBeVisible();
+    expect(screen.getByText("49")).toBeVisible();
+    expect(screen.getByText(/Satu Data Jakarta \/ Dukcapil DKI/)).toBeVisible();
+    expect(screen.queryByText(/returning visitors/i)).not.toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Kelurahan"), { target: { value: "1" } });
+    expect(screen.getByText("100 penduduk")).toBeVisible();
   });
 });

@@ -24,6 +24,8 @@ from app.api.contracts import (
     MetadataResponse,
 )
 from app.datasets.service import active_release_id, current_dataset_fingerprint
+from app.demographics.contracts import DemographicsResponse
+from app.demographics.service import demographics
 from app.db.models import (
     Business,
     BusinessCategory,
@@ -40,6 +42,17 @@ from app.taxonomy.businesses import BusinessCategorySlug
 router = APIRouter(prefix="/api")
 
 SUPPORTED_RADII = (500, 1000, 2000, 3000, 5000)
+
+
+@router.get("/demographics", response_model=DemographicsResponse)
+def population_demographics(session: Annotated[Session, Depends(get_session)]):
+    try:
+        return demographics(session)
+    except LookupError as error:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "DEMOGRAPHICS_UNAVAILABLE", "message": str(error)},
+        ) from error
 
 
 def _validate_bbox(*, west: float, south: float, east: float, north: float) -> None:
@@ -176,6 +189,7 @@ def list_businesses(
 @router.get("/layers/population", response_model=GeoJsonFeatureCollection)
 def population_layer(
     session: Annotated[Session, Depends(get_session)],
+    expected_release_id: int | None = None,
     west: Annotated[float, Query(ge=-180, le=180)] = 106.45,
     south: Annotated[float, Query(ge=-90, le=90)] = -6.38,
     east: Annotated[float, Query(ge=-180, le=180)] = 106.98,
@@ -183,6 +197,11 @@ def population_layer(
 ):
     _validate_bbox(west=west, south=south, east=east, north=north)
     release_id = active_release_id(session)
+    if expected_release_id is not None and expected_release_id != release_id:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "RELEASE_CHANGED", "message": "the active data release changed; reload the page"},
+        )
     rows = session.execute(
         text(
             """

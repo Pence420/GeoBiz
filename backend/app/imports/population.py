@@ -16,6 +16,7 @@ class PopulationRecord(BaseModel):
     kecamatan: str
     kelurahan: str
     population: int = Field(ge=0)
+    age_gender: dict[str, dict[str, int]] = Field(default_factory=dict)
 
 
 class KelurahanBoundary(BaseModel):
@@ -31,6 +32,7 @@ class JoinedKelurahan(BaseModel):
     wilayah: str
     kecamatan: str
     population: int
+    age_gender: dict[str, dict[str, int]] = Field(default_factory=dict)
     properties: dict[str, Any]
     geometry: dict[str, Any]
 
@@ -54,6 +56,7 @@ def parse_population_records(
     payload: Mapping[str, Any], *, period: str
 ) -> list[PopulationRecord]:
     aggregates: dict[tuple[str, str, str], int] = {}
+    age_gender: dict[tuple[str, str, str], dict[str, dict[str, int]]] = {}
     rows = payload.get("data", [])
     if not isinstance(rows, list):
         return []
@@ -71,12 +74,36 @@ def parse_population_records(
             continue
         key = (wilayah, kecamatan, kelurahan)
         aggregates[key] = aggregates.get(key, 0) + population
+        age = str(row.get("kelompok_umur", "")).strip()
+        male_raw = row.get("jumlah_laki_laki")
+        female_raw = row.get("jumlah_perempuan")
+        if age and male_raw is not None and female_raw is not None:
+            male = int(str(male_raw).replace(".", ""))
+            female = int(str(female_raw).replace(".", ""))
+            if male < 0 or female < 0 or male + female != population:
+                raise ValueError(f"invalid age/gender total for {key} {age}")
+            cohorts = age_gender.setdefault(key, {})
+            if age in cohorts:
+                raise ValueError(f"duplicate age cohort for {key} {age}")
+            cohorts[age] = {"male": male, "female": female}
+        elif male_raw is not None or female_raw is not None:
+            raise ValueError(f"incomplete age/gender data for {key}")
+    for key, cohorts in age_gender.items():
+        cohort_total = sum(values["male"] + values["female"] for values in cohorts.values())
+        if cohort_total != aggregates[key]:
+            raise ValueError(f"age/gender cohorts do not match population for {key}")
+    if age_gender and (
+        len(age_gender) != len(aggregates)
+        or len({tuple(sorted(cohorts)) for cohorts in age_gender.values()}) != 1
+    ):
+        raise ValueError("age/gender cohorts are incomplete across kelurahan")
     return [
         PopulationRecord(
             wilayah=wilayah,
             kecamatan=kecamatan,
             kelurahan=kelurahan,
             population=population,
+            age_gender=age_gender.get((wilayah, kecamatan, kelurahan), {}),
         )
         for (wilayah, kecamatan, kelurahan), population in sorted(aggregates.items())
     ]
@@ -157,6 +184,7 @@ def join_population_to_boundaries(
                 wilayah=population.wilayah,
                 kecamatan=population.kecamatan,
                 population=population.population,
+                age_gender=population.age_gender,
                 properties=boundary.properties,
                 geometry=boundary.geometry,
             )

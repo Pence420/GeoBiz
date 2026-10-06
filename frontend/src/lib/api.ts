@@ -16,6 +16,31 @@ export type MapConfig = {
   fallback_available: boolean;
 };
 
+export type Demographics = {
+  release_id: number;
+  release_key: string;
+  dataset_fingerprint: string;
+  source_name: string;
+  source_url: string;
+  observed_at: string | null;
+  total_areas: number;
+  covered_areas: number;
+  total_population: number;
+  male: number;
+  female: number;
+  age_gender: Array<{ age: string; male: number; female: number; total: number }>;
+  areas: Array<{
+    id: number;
+    name: string;
+    wilayah: string;
+    kecamatan: string;
+    population: number;
+    population_density: number | null;
+    male: number;
+    female: number;
+  }>;
+};
+
 export type BusinessFeature = Feature<
   Point,
   {
@@ -276,6 +301,10 @@ export function fetchMapConfig() {
   return request<MapConfig>("/map-config");
 }
 
+export function fetchDemographics() {
+  return request<Demographics>("/demographics");
+}
+
 export async function fetchBusinesses(category: BusinessCategory) {
   const payload = await request<{ features: BusinessFeature[] }>(
     `/businesses?category=${category}&limit=3000`,
@@ -283,9 +312,9 @@ export async function fetchBusinesses(category: BusinessCategory) {
   return payload.features;
 }
 
-export async function fetchPopulationLayer() {
+export async function fetchPopulationLayer(expectedReleaseId?: number) {
   const payload = await request<{ features: MapLayerFeature[] }>(
-    "/layers/population",
+    `/layers/population${expectedReleaseId === undefined ? "" : `?expected_release_id=${expectedReleaseId}`}`,
   );
   return payload.features;
 }

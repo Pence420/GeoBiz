@@ -11,13 +11,17 @@ their origin and validation rules reviewable.
 | OSM extract | OpenStreetMap / download.openstreetmap.fr | F&B, Retail, Services, contextual POIs, roads, and vector basemap |
 | DKI boundary | OpenStreetMap via Nominatim | geographic clipping and coverage validation |
 | GTFS | PT Transportasi Jakarta | TransJakarta stops |
-| Population | Satu Data Jakarta / Dukcapil DKI | kelurahan population and density |
+| Population | Satu Data Jakarta / Dukcapil DKI | kelurahan population, density, and age/gender cohorts |
 
 OpenStreetMap remains attributed as `© OpenStreetMap contributors` under ODbL.
 The population snapshot is pinned to the verified 2025 period until a newer
 official period is configured, downloaded, and checksum-validated. A source
 endpoint changing method, schema, or period must fail the refresh; it must not
 silently reuse or invent rows.
+New releases retain validated age/gender cohorts alongside each population
+area. Older releases read the local raw snapshot only when its checksum matches
+the population source linked to that release; missing or mismatched snapshots
+show incomplete coverage instead of fabricated figures.
 
 Rules:
 

@@ -14,6 +14,8 @@ The v2 application includes:
 - category-specific 0–100 scoring, nearby subtype evidence, rankings, filters,
   and three-area comparison;
 - analytics and methodology views tied to the same release fingerprint;
+- a Demographics tab with official 2025 age/gender cohorts and kelurahan
+  population-density geography, not customer or visitor data;
 - on-demand, checksum-verified refreshes with atomic activation and rollback;
 - Docker-only operation with no paid API, account, API key, or billing dependency.
 
@@ -71,6 +73,8 @@ git rev-parse HEAD
 Copy the `geobiz-demo-transfer` folder to the other laptop and note the printed
 commit. `geobiz.dump` contains the release-scoped business, area, and score
 records; the archive contains the matching raw sources and offline map files.
+The raw population snapshot also lets older releases show verified age/gender
+detail even if they were imported before the Demographics tab existed.
 Keep this transfer folder outside the Git repository and do not publish the dump.
 
 On the receiving laptop, install Docker Desktop (or Docker Engine with Compose),

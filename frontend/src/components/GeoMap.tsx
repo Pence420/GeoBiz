@@ -47,9 +47,9 @@ type Props = {
 };
 
 const categoryColors: Record<BusinessCategory, string> = {
-  fnb: "#3157e8",
-  retail: "#111318",
-  services: "#1f9d73",
+  fnb: "#335c39",
+  retail: "#263c29",
+  services: "#6d9f62",
 };
 
 export function GeoMap({
@@ -146,11 +146,11 @@ export function GeoMap({
             0,
             "rgba(49,87,232,0)",
             0.35,
-            "#36b8e6",
+            "#6098a9",
             0.65,
-            "#3157e8",
+            "#6d9f62",
             1,
-            "#e64646",
+            "#c57f62",
           ],
         },
         layout: { visibility: layers.heatmap ? "visible" : "none" },
@@ -178,15 +178,15 @@ export function GeoMap({
             "fill-color": [
               "step",
               ["coalesce", ["get", "final_score"], 0],
-              "#eceef2",
+              "#edf1e9",
               20,
-              "#dbe5f2",
+              "#dce8d4",
               40,
-              "#9fbaf5",
+              "#b4d19f",
               60,
-              "#4772e8",
+              "#7caa6d",
               80,
-              "#183bb8",
+              "#345f3d",
             ],
             "fill-opacity": 0.58,
             "fill-outline-color": "rgba(20,45,120,0.4)",
@@ -206,13 +206,13 @@ export function GeoMap({
               ["linear"],
               ["coalesce", ["get", "population_density"], 0],
               0,
-              "#edf4ff",
+              "#eef4e9",
               10000,
-              "#b9ccff",
+              "#bed9b3",
               25000,
-              "#6f8df1",
+              "#83b177",
               50000,
-              "#243fbe",
+              "#385e3f",
             ],
             "fill-opacity": 0.58,
             "fill-outline-color": "rgba(49,87,232,0.35)",
@@ -288,9 +288,9 @@ export function GeoMap({
         source: "selection",
         filter: ["==", ["get", "kind"], "radius"],
         paint: {
-          "fill-color": "#3157e8",
+          "fill-color": "#426e4b",
           "fill-opacity": 0.1,
-          "fill-outline-color": "#3157e8",
+          "fill-outline-color": "#426e4b",
         },
       });
       map.addLayer({
@@ -301,7 +301,7 @@ export function GeoMap({
         paint: {
           "circle-color": "#ffffff",
           "circle-radius": 7,
-          "circle-stroke-color": "#3157e8",
+          "circle-stroke-color": "#426e4b",
           "circle-stroke-width": 4,
         },
       });

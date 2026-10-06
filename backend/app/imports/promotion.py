@@ -271,6 +271,7 @@ def promote_population_areas(
                             "population_source": population_manifest.dataset_slug,
                             "wilayah": record.wilayah,
                             "kecamatan": record.kecamatan,
+                            "age_gender": record.age_gender,
                         }
                     ),
                     "geometry": json.dumps(record.geometry),

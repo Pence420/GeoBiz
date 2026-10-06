@@ -125,6 +125,56 @@ def test_map_config_and_refresh_status_use_active_release(db_session: Session) -
     assert "trigger_url" not in status
 
 
+def test_demographics_only_reads_the_active_release(db_session: Session) -> None:
+    release = _activate_v2(db_session)
+    source = DatasetSource(
+        slug="satudata-dki-population-2025",
+        provider="Satu Data Jakarta / Dukcapil DKI Jakarta",
+        source_url="https://satudata.jakarta.go.id/open-data/detail",
+        license_name="Satu Data Jakarta public open data",
+        attribution="Satu Data Jakarta",
+        observed_at=datetime(2025, 12, 31, tzinfo=UTC).date(),
+        retrieved_at=datetime.now(UTC),
+        sha256="d" * 64,
+    )
+    db_session.add(source)
+    db_session.flush()
+    db_session.add(DataReleaseSource(
+        data_release_id=release.id,
+        dataset_source_id=source.id,
+        role=source.slug,
+    ))
+    db_session.execute(text("""
+        INSERT INTO administrative_areas (
+            data_release_id, dataset_source_id, source_record_id, name,
+            area_type, population, population_density, observed_at,
+            retrieved_at, original_properties, geom
+        ) VALUES (
+            :release_id, :source_id, 'relation/test', 'DURI PULO',
+            'kelurahan', 100, 10000, '2025-12-31', now(),
+            '{"wilayah":"JAKARTA PUSAT","kecamatan":"GAMBIR", "age_gender":{"00-04":{"male":51,"female":49}}}'::jsonb,
+            ST_Multi(ST_GeomFromText('POLYGON((106.8 -6.2,106.81 -6.2,106.81 -6.21,106.8 -6.2))', 4326))
+        )
+    """), {"release_id": release.id, "source_id": source.id})
+
+    client = _client(db_session)
+    try:
+        response = client.get("/api/demographics")
+        stale_map = client.get("/api/layers/population", params={"expected_release_id": release.id + 1})
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["release_id"] == release.id
+    assert body["total_population"] == 100
+    assert body["male"] == 51
+    assert body["female"] == 49
+    assert body["age_gender"] == [{"age": "00-04", "male": 51, "female": 49, "total": 100}]
+    assert body["areas"][0]["name"] == "DURI PULO"
+    assert stale_map.status_code == 409
+
+
 def test_active_pmtiles_artifact_supports_byte_ranges(
     db_session: Session, tmp_path: Path
 ) -> None:
