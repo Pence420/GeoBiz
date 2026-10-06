@@ -390,7 +390,7 @@ def area_alias(
     east: Annotated[float, Query(ge=-180, le=180)] = 106.98,
     north: Annotated[float, Query(ge=-90, le=90)] = -5.60,
 ):
-    return population_layer(session, west, south, east, north)
+    return population_layer(session, west=west, south=south, east=east, north=north)
 
 
 @router.get(

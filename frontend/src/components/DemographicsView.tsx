@@ -16,11 +16,11 @@ function polygonRings(geometry: Geometry): number[][][][] {
   return [];
 }
 
-function mapPaths(features: MapLayerFeature[]) {
+function mapGeometry(features: MapLayerFeature[]) {
   const coordinates = features.flatMap((feature) =>
     polygonRings(feature.geometry).flatMap((polygon) => polygon.flatMap((ring) => ring)),
   );
-  if (!coordinates.length) return new Map<number, string>();
+  if (!coordinates.length) return { paths: new Map<number, string>(), markers: new Map<number, [number, number]>() };
   let west = Infinity;
   let east = -Infinity;
   let south = Infinity;
@@ -34,14 +34,20 @@ function mapPaths(features: MapLayerFeature[]) {
   const scale = Math.min(600 / Math.max(east - west, 0.001), 390 / Math.max(north - south, 0.001));
   const offsetX = (640 - (east - west) * scale) / 2;
   const offsetY = (430 - (north - south) * scale) / 2;
-  const xy = ([longitude, latitude]: number[]) =>
-    `${(offsetX + (longitude - west) * scale).toFixed(1)},${(offsetY + (north - latitude) * scale).toFixed(1)}`;
-  return new Map(features.map((feature) => [
+  const point = ([longitude, latitude]: number[]): [number, number] =>
+    [offsetX + (longitude - west) * scale, offsetY + (north - latitude) * scale];
+  const xy = (coordinate: number[]) => point(coordinate).map((value) => value.toFixed(1)).join(",");
+  const paths = new Map(features.map((feature) => [
     feature.id,
     polygonRings(feature.geometry).map((polygon) =>
       polygon.map((ring) => `M${ring.map(xy).join("L")}Z`).join(""),
     ).join(""),
   ]));
+  const markers = new Map(features.flatMap((feature) => {
+    const coordinate = polygonRings(feature.geometry)[0]?.[0]?.[0];
+    return coordinate ? [[feature.id, point(coordinate)] as [number, [number, number]]] : [];
+  }));
+  return { paths, markers };
 }
 
 export function DemographicsView({ releaseId }: { releaseId: number }) {
@@ -69,10 +75,17 @@ export function DemographicsView({ releaseId }: { releaseId: number }) {
 
   const regions = useMemo(() => [...new Set(data?.areas.map((area) => area.wilayah) ?? [])].sort(), [data]);
   const visibleAreas = useMemo(() => data?.areas.filter((area) => region === "all" || area.wilayah === region) ?? [], [data, region]);
-  const visibleIds = useMemo(() => new Set(visibleAreas.map((area) => area.id)), [visibleAreas]);
-  const paths = useMemo(() => mapPaths(features.filter((feature) => visibleIds.has(feature.id))), [features, visibleIds]);
+  const islandAreas = useMemo(() => visibleAreas.filter((area) => area.wilayah.includes("KEP. SERIBU")), [visibleAreas]);
+  const mainlandAreas = useMemo(() => visibleAreas.filter((area) => !area.wilayah.includes("KEP. SERIBU")), [visibleAreas]);
+  const primaryAreas = mainlandAreas.length ? mainlandAreas : islandAreas;
+  const primaryIds = useMemo(() => new Set(primaryAreas.map((area) => area.id)), [primaryAreas]);
+  const islandIds = useMemo(() => new Set(islandAreas.map((area) => area.id)), [islandAreas]);
+  const primaryMap = useMemo(() => mapGeometry(features.filter((feature) => primaryIds.has(feature.id))), [features, primaryIds]);
+  const islandMap = useMemo(() => mapGeometry(features.filter((feature) => islandIds.has(feature.id))), [features, islandIds]);
   const selected = visibleAreas.find((area) => area.id === selectedId) ?? null;
   const maxAge = Math.max(1, ...(data?.age_gender.map((band) => Math.max(band.male, band.female)) ?? []));
+  const renderArea = (area: Demographics["areas"][number], path: string) => <path key={area.id} d={path} fillRule="evenodd" className={`demographics-area ${selectedId === area.id ? "selected" : ""}`} data-density={area.population_density == null ? "none" : area.population_density >= 30000 ? "high" : area.population_density >= 15000 ? "medium" : "low"} onClick={() => setSelectedId(area.id)}><title>{area.name}: {number(area.population)} penduduk; {area.population_density?.toLocaleString("id-ID", { maximumFractionDigits: 0 }) ?? "—"} jiwa/km²</title></path>;
+  const renderIslandMarker = (area: Demographics["areas"][number], point: [number, number]) => <circle key={area.id} cx={point[0]} cy={point[1]} r={selectedId === area.id ? 8 : 6} className="demographics-island-marker" data-density={area.population_density == null ? "none" : area.population_density >= 30000 ? "high" : area.population_density >= 15000 ? "medium" : "low"} onClick={() => setSelectedId(area.id)}><title>{area.name}: {number(area.population)} penduduk</title></circle>;
 
   return (
     <main id="main-content" className="content-view demographics-view" aria-label="Demografi penduduk wilayah">
@@ -98,9 +111,16 @@ export function DemographicsView({ releaseId }: { releaseId: number }) {
           </section>
           <section className="demographics-panel residence-panel" aria-label="Peta persebaran penduduk">
             <div className="demographics-title"><div><span>02 / PLACE</span><h2>Population by kelurahan</h2><p>Warna lebih pekat berarti kepadatan lebih tinggi.</p></div><span>{number(visibleAreas.length)} area</span></div>
-            {paths.size ? <svg className="demographics-map" viewBox="0 0 640 430" role="img" aria-label="Peta kepadatan penduduk per kelurahan DKI Jakarta">
-              {visibleAreas.map((area) => paths.get(area.id) ? <path key={area.id} d={paths.get(area.id)} fillRule="evenodd" className={`demographics-area ${selectedId === area.id ? "selected" : ""}`} data-density={area.population_density == null ? "none" : area.population_density >= 30000 ? "high" : area.population_density >= 15000 ? "medium" : "low"} onClick={() => setSelectedId(area.id)}><title>{area.name}: {number(area.population)} penduduk; {area.population_density?.toLocaleString("id-ID", { maximumFractionDigits: 0 }) ?? "—"} jiwa/km²</title></path> : null)}
-            </svg> : <p className="panel-empty">Geometri wilayah belum tersedia.</p>}
+            {primaryMap.paths.size ? <div className="demographics-map-wrap">
+              <svg className="demographics-map" viewBox="0 0 640 430" role="img" aria-label={`Peta kepadatan penduduk per kelurahan ${mainlandAreas.length ? "Jakarta daratan" : "Kepulauan Seribu"}`}>
+                {primaryAreas.map((area) => { const path = primaryMap.paths.get(area.id); return path ? renderArea(area, path) : null; })}
+                {!mainlandAreas.length ? islandAreas.map((area) => { const point = primaryMap.markers.get(area.id); return point ? renderIslandMarker(area, point) : null; }) : null}
+              </svg>
+              {mainlandAreas.length > 0 && islandMap.paths.size > 0 ? <div className="demographics-island-inset"><span>Kepulauan Seribu</span><svg viewBox="0 0 640 430" role="img" aria-label="Peta kepadatan penduduk Kepulauan Seribu">
+                {islandAreas.map((area) => { const path = islandMap.paths.get(area.id); return path ? renderArea(area, path) : null; })}
+                {islandAreas.map((area) => { const point = islandMap.markers.get(area.id); return point ? renderIslandMarker(area, point) : null; })}
+              </svg><small>6 kelurahan · skala terpisah</small></div> : null}
+            </div> : <p className="panel-empty">Geometri wilayah belum tersedia.</p>}
             <div className="map-density-legend"><span><i className="low" />&lt;15 ribu</span><span><i className="medium" />15–30 ribu</span><span><i className="high" />≥30 ribu jiwa/km²</span></div>
             <div className="selected-demographic" aria-live="polite">
               <label htmlFor="demographic-area-select">Kelurahan</label>

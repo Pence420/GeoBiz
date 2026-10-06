@@ -1,4 +1,5 @@
 from datetime import UTC, datetime
+import json
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -152,10 +153,18 @@ def test_demographics_only_reads_the_active_release(db_session: Session) -> None
         ) VALUES (
             :release_id, :source_id, 'relation/test', 'DURI PULO',
             'kelurahan', 100, 10000, '2025-12-31', now(),
-            '{"wilayah":"JAKARTA PUSAT","kecamatan":"GAMBIR", "age_gender":{"00-04":{"male":51,"female":49}}}'::jsonb,
+            CAST(:properties AS jsonb),
             ST_Multi(ST_GeomFromText('POLYGON((106.8 -6.2,106.81 -6.2,106.81 -6.21,106.8 -6.2))', 4326))
         )
-    """), {"release_id": release.id, "source_id": source.id})
+    """), {
+        "release_id": release.id,
+        "source_id": source.id,
+        "properties": json.dumps({
+            "wilayah": "JAKARTA PUSAT",
+            "kecamatan": "GAMBIR",
+            "age_gender": {"00-04": {"male": 51, "female": 49}},
+        }),
+    })
 
     client = _client(db_session)
     try:
