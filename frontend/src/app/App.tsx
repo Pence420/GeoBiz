@@ -10,6 +10,7 @@ import {
 } from "react";
 
 import { NearbyEvidence } from "../components/NearbyEvidence";
+import { DashboardShell, type ViewKey } from "../components/DashboardShell";
 import { SearchBox } from "../components/SearchBox";
 import {
   analyzeLocation,
@@ -45,7 +46,6 @@ const MethodologyView = lazy(() =>
 const DEFAULT_LOCATION = { latitude: -6.1754, longitude: 106.8272 };
 const RADII = [500, 1000, 2000, 3000, 5000];
 type LayerKey = "opportunity" | "competitors" | "heatmap" | "population" | "transport" | "commercial" | "education" | "office" | "roads";
-type ViewKey = "overview" | "analytics" | "demographics" | "methodology";
 
 const layerLabels: Record<LayerKey, string> = {
   opportunity: "Opportunity",
@@ -336,24 +336,7 @@ export function App() {
   }
 
   return (
-    <div className="app-shell" id="top">
-      <a className="skip-link" href="#main-content">Skip to main content</a>
-      <header className="topbar">
-        <a className="brand" href="#top" aria-label="GeoBiz home">
-          <span className="brand-mark" aria-hidden="true">G</span>
-          <span>GeoBiz</span>
-        </a>
-        <nav aria-label="Navigasi utama">
-          <a className={`nav-link ${activeView === "overview" ? "active" : ""}`} href="#overview" onClick={() => setActiveView("overview")}>Map explorer</a>
-          <a className={`nav-link ${activeView === "analytics" ? "active" : ""}`} href="#analytics" onClick={() => setActiveView("analytics")}>Analytics</a>
-          <a className={`nav-link ${activeView === "demographics" ? "active" : ""}`} href="#demographics" onClick={() => setActiveView("demographics")}>Demographics</a>
-          <a className={`nav-link ${activeView === "methodology" ? "active" : ""}`} href="#methodology-view" onClick={() => setActiveView("methodology")}>Methodology</a>
-        </nav>
-        <div className="project-meta">
-          <span className="status-dot" aria-hidden="true" />
-          <span><strong>DKI Jakarta</strong><small>Data publik terverifikasi</small></span>
-        </div>
-      </header>
+    <DashboardShell activeView={activeView} releaseKey={mapConfig.release_key}>
 
       {activeView === "overview" ? <main id="main-content">
         <h1 className="sr-only">GeoBiz DKI Jakarta Business Location Intelligence</h1>
@@ -613,7 +596,7 @@ export function App() {
           <MethodologyView />
         </Suspense>
       ) : null}
-    </div>
+    </DashboardShell>
   );
 }
 
