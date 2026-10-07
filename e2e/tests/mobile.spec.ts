@@ -50,15 +50,16 @@ test("keeps resident demographics readable and selectable on a phone viewport", 
   await page.getByRole("link", { name: "Demographics" }).click();
 
   await expect(page.getByRole("heading", { name: "People behind the place." })).toBeVisible();
-  await expect(page.getByRole("img", { name: "Peta kepadatan penduduk per kelurahan Jakarta daratan" })).toBeVisible();
-  await expect(page.getByRole("img", { name: "Peta kepadatan penduduk Kepulauan Seribu" })).toBeVisible();
+  await expect(page.locator(".demographics-map")).toBeVisible();
+  await expect(page.locator(".demographics-island-inset svg")).toBeVisible();
+  await expect(page.getByText(/gunakan daftar Kelurahan dengan keyboard/)).toBeVisible();
   await expect.poll(async () => page.evaluate(() => ({
     clientWidth: document.documentElement.clientWidth,
     scrollWidth: document.documentElement.scrollWidth,
   }))).toEqual({ clientWidth: 390, scrollWidth: 390 });
 
   await page.getByLabel("Fokus peta").selectOption("KAB. ADM. KEP. SERIBU");
-  await expect(page.getByRole("img", { name: "Peta kepadatan penduduk per kelurahan Kepulauan Seribu" })).toBeVisible();
+  await expect(page.locator(".demographics-map")).toBeVisible();
   await page.getByLabel("Kelurahan", { exact: true }).selectOption({ label: "PULAU TIDUNG · KEPULAUAN SERIBU SELATAN" });
   await expect(page.locator(".selected-demographic strong")).toContainText("penduduk");
 });

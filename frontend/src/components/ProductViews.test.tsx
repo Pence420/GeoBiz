@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AnalyticsView } from "./AnalyticsView";
@@ -118,6 +118,24 @@ describe("PRD product views", () => {
     expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
   });
 
+  it("does not restore results from a request after search is cleared", async () => {
+    let resolveSearch!: (response: Response) => void;
+    vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>((resolve) => {
+      resolveSearch = resolve;
+    })));
+    render(<SearchBox onSelect={vi.fn()} />);
+    fireEvent.change(screen.getByPlaceholderText(/Search Senayan/), { target: { value: "Senayan" } });
+    await waitFor(() => expect(fetch).toHaveBeenCalled());
+    fireEvent.click(screen.getByRole("button", { name: "Clear search" }));
+    await act(async () => {
+      resolveSearch(Response.json([{
+        id: "area:1", name: "Senayan", result_type: "area", subtitle: "Kelurahan",
+        longitude: 106.802, latitude: -6.226, source_record_id: null,
+      }]));
+    });
+    expect(screen.queryByRole("listbox")).not.toBeInTheDocument();
+  });
+
   it("renders evidence-based analytics without fabricated revenue metrics", async () => {
     render(<AnalyticsView category="fnb" radius={1000} onCategoryChange={vi.fn()} onRadiusChange={vi.fn()} />);
     expect(await screen.findByText("1.826")).toBeVisible();
@@ -150,6 +168,8 @@ describe("PRD product views", () => {
     expect(screen.getByText("49")).toBeVisible();
     expect(screen.getByText(/Satu Data Jakarta \/ Dukcapil DKI/)).toBeVisible();
     expect(screen.queryByText(/returning visitors/i)).not.toBeInTheDocument();
+    expect(screen.getByText(/gunakan daftar Kelurahan dengan keyboard/)).toBeVisible();
+    expect(document.querySelector(".demographics-map")).toHaveAttribute("aria-hidden", "true");
     fireEvent.change(screen.getByLabelText("Kelurahan"), { target: { value: "1" } });
     expect(screen.getByText("100 penduduk")).toBeVisible();
   });

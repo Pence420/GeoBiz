@@ -14,6 +14,7 @@ export function SearchBox({ onSelect }: Props) {
   const selectedQuery = useRef<string | null>(null);
 
   useEffect(() => {
+    const currentRequest = ++requestId.current;
     if (query === selectedQuery.current) {
       setResults([]);
       setStatus("idle");
@@ -24,7 +25,6 @@ export function SearchBox({ onSelect }: Props) {
       setStatus("idle");
       return;
     }
-    const currentRequest = ++requestId.current;
     const timeout = window.setTimeout(() => {
       setStatus("loading");
       searchLocations(query.trim())

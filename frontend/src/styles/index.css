@@ -498,6 +498,7 @@ button:active { transform: translateY(1px); }
 .demographics-island-marker:hover { stroke: var(--forest); }
 .demographics-island-inset .demographics-island-marker { r: 16px; stroke-width: 7; }
 .map-density-legend { margin-top: 14px; }
+.selection-help { margin: 11px 0 0; color: #6f806e; font-size: 11px; line-height: 1.45; }
 .map-density-legend .low { background: #cbdcca; }
 .map-density-legend .medium { background: #91b690; }
 .map-density-legend .high { background: #3c7048; }

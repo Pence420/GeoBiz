@@ -112,19 +112,20 @@ export function DemographicsView({ releaseId }: { releaseId: number }) {
           <section className="demographics-panel residence-panel" aria-label="Peta persebaran penduduk">
             <div className="demographics-title"><div><span>02 / PLACE</span><h2>Population by kelurahan</h2><p>Warna lebih pekat berarti kepadatan lebih tinggi.</p></div><span>{number(visibleAreas.length)} area</span></div>
             {primaryMap.paths.size ? <div className="demographics-map-wrap">
-              <svg className="demographics-map" viewBox="0 0 640 430" role="img" aria-label={`Peta kepadatan penduduk per kelurahan ${mainlandAreas.length ? "Jakarta daratan" : "Kepulauan Seribu"}`}>
+              <svg className="demographics-map" viewBox="0 0 640 430" aria-hidden="true">
                 {primaryAreas.map((area) => { const path = primaryMap.paths.get(area.id); return path ? renderArea(area, path) : null; })}
                 {!mainlandAreas.length ? islandAreas.map((area) => { const point = primaryMap.markers.get(area.id); return point ? renderIslandMarker(area, point) : null; }) : null}
               </svg>
-              {mainlandAreas.length > 0 && islandMap.paths.size > 0 ? <div className="demographics-island-inset"><span>Kepulauan Seribu</span><svg viewBox="0 0 640 430" role="img" aria-label="Peta kepadatan penduduk Kepulauan Seribu">
+              {mainlandAreas.length > 0 && islandMap.paths.size > 0 ? <div className="demographics-island-inset"><span>Kepulauan Seribu</span><svg viewBox="0 0 640 430" aria-hidden="true">
                 {islandAreas.map((area) => { const path = islandMap.paths.get(area.id); return path ? renderArea(area, path) : null; })}
                 {islandAreas.map((area) => { const point = islandMap.markers.get(area.id); return point ? renderIslandMarker(area, point) : null; })}
               </svg><small>6 kelurahan · skala terpisah</small></div> : null}
             </div> : <p className="panel-empty">Geometri wilayah belum tersedia.</p>}
             <div className="map-density-legend"><span><i className="low" />&lt;15 ribu</span><span><i className="medium" />15–30 ribu</span><span><i className="high" />≥30 ribu jiwa/km²</span></div>
+            <p className="selection-help" id="demographics-selection-help">Pilih wilayah pada peta, atau gunakan daftar Kelurahan dengan keyboard.</p>
             <div className="selected-demographic" aria-live="polite">
               <label htmlFor="demographic-area-select">Kelurahan</label>
-              <select id="demographic-area-select" value={selectedId ?? ""} onChange={(event) => setSelectedId(event.target.value ? Number(event.target.value) : null)}><option value="">Pilih wilayah</option>{visibleAreas.map((area) => <option value={area.id} key={area.id}>{area.name} · {area.kecamatan}</option>)}</select>
+              <select id="demographic-area-select" aria-describedby="demographics-selection-help" value={selectedId ?? ""} onChange={(event) => setSelectedId(event.target.value ? Number(event.target.value) : null)}><option value="">Pilih wilayah</option>{visibleAreas.map((area) => <option value={area.id} key={area.id}>{area.name} · {area.kecamatan}</option>)}</select>
               {selected ? <span><strong>{number(selected.population)} penduduk</strong> · {selected.population_density?.toLocaleString("id-ID", { maximumFractionDigits: 0 }) ?? "—"} jiwa/km²</span> : <span>Pilih di peta atau daftar untuk melihat rinciannya.</span>}
             </div>
           </section>
