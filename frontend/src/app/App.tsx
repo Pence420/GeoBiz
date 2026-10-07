@@ -97,7 +97,7 @@ export function App() {
   const [businessError, setBusinessError] = useState<string | null>(null);
   const [businessRequest, setBusinessRequest] = useState(0);
   const [focusedBusiness, setFocusedBusiness] = useState<BusinessFeature | null>(null);
-  const [analysis, setAnalysis] = useState<Analysis | null>(null);
+  const [analysisResult, setAnalysisResult] = useState<{ key: string; value: Analysis } | null>(null);
   const [populationAreas, setPopulationAreas] = useState<MapLayerFeature[]>([]);
   const [opportunityAreas, setOpportunityAreas] = useState<MapLayerFeature[]>([]);
   const [rankings, setRankings] = useState<AreaRanking[]>([]);
@@ -127,6 +127,14 @@ export function App() {
   const [error, setError] = useState<string | null>(null);
   const [mapConfig, setMapConfig] = useState<MapConfig | null>(null);
   const [configError, setConfigError] = useState<string | null>(null);
+  const selectionKey = JSON.stringify([
+    mapConfig?.release_id,
+    category,
+    radius,
+    location.latitude,
+    location.longitude,
+  ]);
+  const analysis = analysisResult?.key === selectionKey ? analysisResult.value : null;
 
   useEffect(() => {
     fetchMapConfig().then(setMapConfig).catch((requestError: Error) => {
@@ -175,14 +183,15 @@ export function App() {
     let cancelled = false;
     setLoading(true);
     setError(null);
+    setAnalysisResult(null);
     analyzeLocation({ ...location, category, radius })
       .then((result) => {
         if (cancelled) return;
-        setAnalysis(result);
+        setAnalysisResult({ key: selectionKey, value: result });
       })
       .catch((requestError: Error) => {
         if (cancelled) return;
-        setAnalysis(null);
+        setAnalysisResult(null);
         setError(requestError.message || "Analisis lokasi gagal dimuat.");
       })
       .finally(() => {
@@ -191,7 +200,7 @@ export function App() {
     return () => {
       cancelled = true;
     };
-  }, [analysisRequest, category, radius, location, mapConfig?.taxonomy_version]);
+  }, [analysisRequest, category, radius, location, mapConfig?.taxonomy_version, selectionKey]);
 
   useEffect(() => {
     if (mapConfig?.taxonomy_version !== "v2.0.0") return;

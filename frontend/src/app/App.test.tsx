@@ -105,6 +105,46 @@ beforeEach(() => {
 });
 
 describe("App", () => {
+  it("does not show old area evidence under a newly selected radius", async () => {
+    const baselineFetch = vi.mocked(fetch);
+    let completeSecond!: (response: Response) => void;
+    const secondResponse = new Promise<Response>((resolve) => { completeSecond = resolve; });
+    let analysisCalls = 0;
+    vi.stubGlobal("fetch", vi.fn((input: string | URL | Request, init?: RequestInit) => {
+      if (String(input).includes("/analyze-location")) {
+        analysisCalls += 1;
+        if (analysisCalls === 2) return secondResponse;
+        if (analysisCalls === 3) return Promise.reject(new Error("Analysis unavailable"));
+      }
+      return baselineFetch(input, init);
+    }));
+    render(<App />);
+    expect(await screen.findByText(/GAMBIR ·/)).toBeVisible();
+    expect(screen.getByText("26")).toBeVisible();
+
+    fireEvent.change(screen.getByLabelText("Radius"), { target: { value: "2000" } });
+    expect(screen.getByText(/Menghitung faktor spasial/)).toBeVisible();
+    expect(screen.queryByText(/GAMBIR ·/)).not.toBeInTheDocument();
+    expect(screen.queryByText("26")).not.toBeInTheDocument();
+
+    const normalResponse = await baselineFetch("/api/analyze-location");
+    const normal = await normalResponse.json();
+    await act(async () => {
+      completeSecond(Response.json({
+        ...normal,
+        containing_area: { ...normal.containing_area, name: "SENAYAN" },
+        nearby_metrics: { ...normal.nearby_metrics, competitor_count: 99 },
+      }));
+    });
+    expect(await screen.findByText(/SENAYAN ·/)).toBeVisible();
+    expect(screen.getByText("99")).toBeVisible();
+
+    fireEvent.change(screen.getByLabelText("Radius"), { target: { value: "3000" } });
+    expect(await screen.findByText("Analysis unavailable")).toBeVisible();
+    expect(screen.queryByText(/SENAYAN ·/)).not.toBeInTheDocument();
+    expect(screen.queryByText("99")).not.toBeInTheDocument();
+  });
+
   it("does not present a failed business layer as complete", async () => {
     const baselineFetch = vi.mocked(fetch);
     vi.stubGlobal("fetch", vi.fn((input: string | URL | Request, init?: RequestInit) => {
