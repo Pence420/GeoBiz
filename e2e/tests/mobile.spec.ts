@@ -60,6 +60,11 @@ test("keeps resident demographics readable and selectable on a phone viewport", 
 
   await page.getByLabel("Fokus peta").selectOption("KAB. ADM. KEP. SERIBU");
   await expect(page.locator(".demographics-map")).toBeVisible();
-  await page.getByLabel("Kelurahan", { exact: true }).selectOption({ label: "PULAU TIDUNG · KEPULAUAN SERIBU SELATAN" });
+  await page.locator(".demographics-map .demographics-island-marker").filter({ hasText: "PULAU TIDUNG" }).click();
+  await expect(page.getByLabel("Kelurahan", { exact: true }).locator("option:checked"))
+    .toHaveText("PULAU TIDUNG · KEPULAUAN SERIBU SELATAN");
   await expect(page.locator(".selected-demographic strong")).toContainText("penduduk");
+  await expect.poll(() => page.locator(".selected-demographic strong").evaluate((element) =>
+    Number.parseFloat(getComputedStyle(element).fontSize),
+  )).toBeGreaterThanOrEqual(28);
 });

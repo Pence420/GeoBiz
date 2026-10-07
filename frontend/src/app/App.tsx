@@ -386,7 +386,7 @@ export function App() {
                 <button type="button" onClick={() => setBusinessRequest((value) => value + 1)}>Coba muat bisnis lagi</button>
               </div>
             ) : null}
-            <p className="map-hint"><span>Klik titik mana pun di dalam DKI Jakarta untuk menghitung ulang.</span><strong>{analysis?.containing_area.name ?? "DKI Jakarta"} · {location.latitude.toFixed(5)}, {location.longitude.toFixed(5)}</strong></p>
+            <p className="map-hint"><span>Klik cluster untuk memperbesar, titik bisnis untuk detail, atau area lain untuk analisis ulang.</span><strong>{analysis?.containing_area.name ?? "DKI Jakarta"} · {location.latitude.toFixed(5)}, {location.longitude.toFixed(5)}</strong></p>
 
             <section className="locations-panel opportunity-panel" id="locations">
               <div className="section-heading">

@@ -167,6 +167,7 @@ describe("App", () => {
       await screen.findByLabelText("Peta interaktif bisnis DKI Jakarta"),
     ).toBeVisible();
     expect(screen.getAllByText("F&B").length).toBeGreaterThan(0);
+    expect(screen.getByText(/Klik cluster untuk memperbesar, titik bisnis untuk detail/)).toBeVisible();
     expect(screen.queryByText("Restaurant")).not.toBeInTheDocument();
   });
 

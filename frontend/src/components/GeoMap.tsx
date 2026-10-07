@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { FeatureCollection } from "geojson";
 import * as maplibregl from "maplibre-gl";
-import type { GeoJSONSource, MapLayerMouseEvent, MapMouseEvent } from "maplibre-gl";
+import type { GeoJSONSource, MapMouseEvent } from "maplibre-gl";
 import workerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url";
 import { Protocol } from "pmtiles";
 import "maplibre-gl/dist/maplibre-gl.css";
@@ -103,7 +103,7 @@ export function GeoMap({
     );
     map.addControl(new maplibregl.FullscreenControl(), "bottom-right");
     map.on("click", (event: MapMouseEvent) =>
-      selectMapLocation(map, event, onSelectLocation),
+      handleMapClick(map, event, onSelectLocation),
     );
     map.on("error", (event) => {
       const message = event.error?.message;
@@ -306,13 +306,14 @@ export function GeoMap({
         },
       });
       updateBusinesses(map, businesses, category);
-      map.on("click", "business-points", (event) => showBusinessPopup(map, event));
-      map.on("mouseenter", "business-points", () => {
-        map.getCanvas().style.cursor = "pointer";
-      });
-      map.on("mouseleave", "business-points", () => {
-        map.getCanvas().style.cursor = "";
-      });
+      for (const layerId of ["business-points", "business-clusters"]) {
+        map.on("mouseenter", layerId, () => {
+          map.getCanvas().style.cursor = "pointer";
+        });
+        map.on("mouseleave", layerId, () => {
+          map.getCanvas().style.cursor = "";
+        });
+      }
       setMapLoaded(true);
     });
     mapRef.current = map;
@@ -439,10 +440,37 @@ function addPointLayer(
   });
 }
 
-function showBusinessPopup(map: maplibregl.Map, event: MapLayerMouseEvent) {
-  event.originalEvent.stopPropagation();
-  const feature = event.features?.[0];
-  if (!feature || feature.geometry.type !== "Point") return;
+function handleMapClick(
+  map: maplibregl.Map,
+  event: MapMouseEvent,
+  onSelectLocation: (longitude: number, latitude: number) => void,
+) {
+  const business = map.getLayer("business-points")
+    ? map.queryRenderedFeatures(event.point, { layers: ["business-points"] })[0]
+    : undefined;
+  if (business?.geometry.type === "Point") {
+    showBusinessPopup(map, business);
+    return;
+  }
+  const cluster = map.getLayer("business-clusters")
+    ? map.queryRenderedFeatures(event.point, { layers: ["business-clusters"] })[0]
+    : undefined;
+  const clusterId = Number(cluster?.properties?.cluster_id);
+  if (cluster?.geometry.type === "Point" && Number.isInteger(clusterId)) {
+    const coordinates = cluster.geometry.coordinates.slice() as [number, number];
+    const source = map.getSource("businesses") as GeoJSONSource;
+    void source.getClusterExpansionZoom(clusterId).then((zoom) => {
+      map.easeTo({ center: coordinates, zoom, duration: 400 });
+    }).catch(() => {
+      map.easeTo({ center: coordinates, zoom: Math.min(map.getZoom() + 2, 14), duration: 400 });
+    });
+    return;
+  }
+  selectMapLocation(map, event, onSelectLocation);
+}
+
+function showBusinessPopup(map: maplibregl.Map, feature: maplibregl.MapGeoJSONFeature) {
+  if (feature.geometry.type !== "Point") return;
   showBusinessDetails(
     map,
     feature.geometry.coordinates.slice() as [number, number],

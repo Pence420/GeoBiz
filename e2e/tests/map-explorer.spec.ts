@@ -51,3 +51,41 @@ test("keeps the dashboard within desktop and tablet viewport widths", async ({ p
     await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   }
 });
+
+test("opens a competitor from a cluster without changing the analysis location", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await page.route("**/api/businesses?**", async (route) => {
+    const features = ["Burger King", "McDonald's"].map((name, index) => ({
+      type: "Feature",
+      id: 900001 + index,
+      geometry: { type: "Point", coordinates: [106.8372, -6.1854] },
+      properties: {
+        name,
+        category: "fnb",
+        source_type: "node",
+        source_record_id: String(900001 + index),
+        business_subtype: "fast_food",
+        taxonomy_version: "v2.0.0",
+      },
+    }));
+    await route.fulfill({ json: { type: "FeatureCollection", features } });
+  });
+  await page.goto("/");
+  await expect(page.getByText(/2 titik peta/)).toBeVisible();
+  await expect(page.locator(".score-number")).toBeVisible({ timeout: 30_000 });
+  const selectedLocation = page.locator(".map-hint strong");
+  await expect(selectedLocation).toContainText("-6.17540, 106.82720");
+  const before = await selectedLocation.innerText();
+  const canvas = page.locator(".maplibregl-canvas");
+  await expect(canvas).toBeVisible();
+  await page.getByRole("button", { name: "Reset Jakarta" }).click();
+  await page.waitForTimeout(700);
+  const bounds = await canvas.boundingBox();
+  expect(bounds).not.toBeNull();
+  await canvas.click({ position: { x: bounds!.width / 2 + 24, y: bounds!.height / 2 - 35 } });
+  await expect(selectedLocation).toHaveText(before);
+  await page.waitForTimeout(700);
+  await canvas.click({ position: { x: bounds!.width / 2, y: bounds!.height / 2 } });
+  await expect(page.locator(".business-popup")).toContainText(/Burger King|McDonald's/);
+  await expect(selectedLocation).toHaveText(before);
+});

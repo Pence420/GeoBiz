@@ -502,11 +502,11 @@ button:active { transform: translateY(1px); }
 .map-density-legend .low { background: #cbdcca; }
 .map-density-legend .medium { background: #91b690; }
 .map-density-legend .high { background: #3c7048; }
-.selected-demographic { display: flex; flex-wrap: wrap; gap: 7px 12px; min-height: 40px; margin-top: 13px; padding: 12px; border-radius: 9px; background: #eff5ec; color: #687a68; font-size: 11px; }
-.selected-demographic strong { color: var(--forest); }
+.selected-demographic { display: flex; flex-wrap: wrap; gap: 10px 12px; min-height: 40px; margin-top: 13px; padding: 16px; border-radius: 9px; background: #eff5ec; color: #687a68; font-size: 12px; }
+.selected-demographic strong { display: block; margin-bottom: 4px; color: var(--forest); font-size: clamp(28px, 7vw, 36px); line-height: 1.05; font-weight: 700; font-variant-numeric: tabular-nums; }
 .selected-demographic label { align-self: center; color: var(--forest); font-weight: 650; }
 .selected-demographic select { flex: 1; min-width: 160px; padding: 7px 9px; border: 1px solid #cbdcc4; border-radius: 7px; background: #fff; color: var(--forest); font-size: 11px; }
-.selected-demographic > span { flex-basis: 100%; }
+.selected-demographic > span { flex-basis: 100%; line-height: 1.4; }
 .demographics-view .view-provenance { margin-top: 14px; line-height: 1.5; }
 .demographics-view .view-provenance a { color: #3d7047; }
 
