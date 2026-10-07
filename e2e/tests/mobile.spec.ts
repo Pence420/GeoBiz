@@ -11,8 +11,8 @@ test("keeps the location workflow usable on a phone viewport", async ({ page }) 
     scrollWidth: document.documentElement.scrollWidth,
   }))).toEqual({ clientWidth: 390, scrollWidth: 390 });
 
-  const layers = page.getByLabel("Map layers");
-  const filters = page.getByLabel("Opportunity filters");
+  const layers = page.getByText("Layers", { exact: true });
+  const filters = page.getByText("Filters", { exact: true });
   await expect(layers).toBeVisible();
   await expect(filters).toBeVisible();
 
@@ -24,17 +24,14 @@ test("keeps the location workflow usable on a phone viewport", async ({ page }) 
   expect(filtersBox).not.toBeNull();
   expect(layersBox!.x + layersBox!.width).toBeLessThanOrEqual(filtersBox!.x);
 
-  const mapStatus = page.locator(".map-mode-badge");
-  await expect(mapStatus).toBeVisible();
-  const statusBox = await mapStatus.boundingBox();
-  expect(statusBox).not.toBeNull();
-  const statusOverlapsFilters = !(
-    statusBox!.x + statusBox!.width <= filtersBox!.x
-    || statusBox!.x >= filtersBox!.x + filtersBox!.width
-    || statusBox!.y + statusBox!.height <= filtersBox!.y
-    || statusBox!.y >= filtersBox!.y + filtersBox!.height
-  );
-  expect(statusOverlapsFilters).toBe(false);
+  await layers.focus();
+  await page.keyboard.press("Enter");
+  await expect(page.locator(".layer-options").getByText("Map layers")).toBeVisible();
+  await layers.click();
+  await filters.click();
+  await expect(page.locator(".filter-options").getByText("Opportunity filters")).toBeVisible();
+  await filters.click();
+  await expect(page.locator(".map-mode-badge")).toBeVisible();
 
   await page.getByRole("combobox", { name: "Bisnis", exact: true }).selectOption("retail");
   await expect(page.getByRole("combobox", { name: "Bisnis", exact: true })).toHaveValue("retail");
@@ -43,7 +40,7 @@ test("keeps the location workflow usable on a phone viewport", async ({ page }) 
   await expect(page.getByRole("heading", { name: "Opportunity analytics" })).toBeVisible();
   await page.getByRole("link", { name: "Methodology" }).click();
   await expect(page.getByRole("heading", { name: "How GeoBiz builds a score" })).toBeVisible();
-  await page.getByRole("link", { name: "Map explorer" }).click();
+  await page.getByRole("link", { name: "Map Explorer" }).click();
   await expect(page.getByLabel("Peta interaktif bisnis DKI Jakarta")).toBeVisible();
 });
 

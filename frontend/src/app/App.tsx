@@ -11,7 +11,7 @@ import {
 
 import { NearbyEvidence } from "../components/NearbyEvidence";
 import { DashboardShell, type ViewKey } from "../components/DashboardShell";
-import { SearchBox } from "../components/SearchBox";
+import { MapControls, type LayerState } from "../components/MapControls";
 import {
   analyzeLocation,
   fetchAreaRankings,
@@ -44,21 +44,6 @@ const MethodologyView = lazy(() =>
 );
 
 const DEFAULT_LOCATION = { latitude: -6.1754, longitude: 106.8272 };
-const RADII = [500, 1000, 2000, 3000, 5000];
-type LayerKey = "opportunity" | "competitors" | "heatmap" | "population" | "transport" | "commercial" | "education" | "office" | "roads";
-
-const layerLabels: Record<LayerKey, string> = {
-  opportunity: "Opportunity",
-  competitors: "Competitors",
-  heatmap: "Heatmap",
-  population: "Population",
-  transport: "Transit",
-  commercial: "Commercial",
-  education: "Education",
-  office: "Offices",
-  roads: "Road network",
-};
-
 const categoryLabels: Record<BusinessCategory, string> = {
   fnb: "F&B",
   retail: "Retail",
@@ -112,7 +97,7 @@ export function App() {
   const [maximumCompetition, setMaximumCompetition] = useState<number | null>(null);
   const [minimumPopulation, setMinimumPopulation] = useState(0);
   const [analysisRequest, setAnalysisRequest] = useState(0);
-  const [layers, setLayers] = useState<Record<LayerKey, boolean>>({
+  const [layers, setLayers] = useState<LayerState>({
     opportunity: true,
     competitors: true,
     heatmap: false,
@@ -287,6 +272,10 @@ export function App() {
   const selectLocation = useCallback((longitude: number, latitude: number) => {
     setLocation({ longitude, latitude });
   }, []);
+  const changeCategory = useCallback((value: BusinessCategory) => {
+    setFocusedBusiness(null);
+    setCategory(value);
+  }, []);
 
   const comparedAreas = rankings.filter((area) =>
     comparedAreaIds.includes(area.area_id),
@@ -342,23 +331,22 @@ export function App() {
         <h1 className="sr-only">GeoBiz DKI Jakarta Business Location Intelligence</h1>
         <section className="workspace" id="overview" aria-label="GeoBiz location analysis">
           <div className="map-column">
-            <div className="map-toolbar">
-              <SearchBox onSelect={selectLocation} />
-              <label className="select-control">
-                <span>Bisnis</span>
-                <select value={category} onChange={(event) => setCategory(event.target.value as BusinessCategory)}>
-                  {Object.entries(categoryLabels).map(([value, label]) => (
-                    <option key={value} value={value}>{label}</option>
-                  ))}
-                </select>
-              </label>
-              <label className="select-control radius-control">
-                <span>Radius</span>
-                <select value={radius} onChange={(event) => setRadius(Number(event.target.value))}>
-                  {RADII.map((value) => <option key={value} value={value}>{value / 1000} km</option>)}
-                </select>
-              </label>
-            </div>
+            <MapControls
+              category={category}
+              radius={radius}
+              layers={layers}
+              minimumScore={minimumScore}
+              maximumCompetition={maximumCompetition}
+              minimumPopulation={minimumPopulation}
+              visibleAreas={filteredOpportunityAreas.length}
+              onSelectLocation={selectLocation}
+              onCategoryChange={changeCategory}
+              onRadiusChange={setRadius}
+              onLayersChange={setLayers}
+              onMinimumScoreChange={setMinimumScore}
+              onMaximumCompetitionChange={setMaximumCompetition}
+              onMinimumPopulationChange={setMinimumPopulation}
+            />
 
             <div className="map-stage">
               <Suspense fallback={<div className="map-canvas map-loading">Memuat peta DKI Jakarta…</div>}>
@@ -380,29 +368,6 @@ export function App() {
                   roads={roads}
                 />
               </Suspense>
-              <div className="layer-panel" aria-label="Map layers">
-                <strong>Map layers</strong>
-                {(Object.keys(layerLabels) as LayerKey[]).map((layer) => (
-                  <label key={layer}>
-                    <input
-                      type="checkbox"
-                      checked={layers[layer]}
-                      onChange={() => setLayers((current) => ({
-                        ...current,
-                        [layer]: !current[layer],
-                      }))}
-                    />
-                    <span>{layerLabels[layer]}</span>
-                  </label>
-                ))}
-              </div>
-              <div className="map-filter-panel" aria-label="Opportunity filters">
-                <strong>Opportunity filters</strong>
-                <label>Minimum score<select value={minimumScore} onChange={(event) => setMinimumScore(Number(event.target.value))}>{[0, 40, 60, 80].map((value) => <option value={value} key={value}>{value === 0 ? "All scores" : `${value}+`}</option>)}</select></label>
-                <label>Competitors<select value={maximumCompetition ?? "all"} onChange={(event) => setMaximumCompetition(event.target.value === "all" ? null : Number(event.target.value))}><option value="all">Any density</option><option value="0">None</option><option value="5">At most 5</option><option value="10">At most 10</option><option value="25">At most 25</option></select></label>
-                <label>Population<select value={minimumPopulation} onChange={(event) => setMinimumPopulation(Number(event.target.value))}><option value="0">Any density</option><option value="10000">10,000+ / km²</option><option value="25000">25,000+ / km²</option><option value="40000">40,000+ / km²</option></select></label>
-                <span>{filteredOpportunityAreas.length} areas visible</span>
-              </div>
               {layers.opportunity ? (
                 <div className="opportunity-legend" aria-label="Opportunity score legend">
                   <strong>Opportunity score</strong>
@@ -433,21 +398,21 @@ export function App() {
               ) : (
                 <div className="ranking-table" role="table" aria-label="Peringkat opportunity kelurahan">
                   <div className="ranking-row ranking-head" role="row">
-                    <span>Area</span><span>Score</span><span>Population</span><span>Competition</span><span>Access</span><span>Compare</span>
+                    <span role="columnheader">Area</span><span role="columnheader">Score</span><span role="columnheader">Population</span><span role="columnheader">Competition</span><span role="columnheader">Access</span><span role="columnheader">Compare</span>
                   </div>
                   {filteredRankings.slice(0, 8).map((area) => {
                     const selected = comparedAreaIds.includes(area.area_id);
                     const disabled = !selected && comparedAreaIds.length >= 3;
                     return (
                       <div className="ranking-row" role="row" key={area.area_id}>
-                        <button className="area-link" type="button" onClick={() => selectLocation(area.longitude, area.latitude)}>
+                        <span role="cell"><button className="area-link" type="button" onClick={() => selectLocation(area.longitude, area.latitude)}>
                           <b>{area.rank}</b><span>{area.area_name}<small>Analyze representative point</small></span>
-                        </button>
-                        <span className="ranking-score"><strong>{area.final_score.toFixed(1)}</strong><small>{area.label}</small></span>
-                        <span>{formatFactor(area, "population_density")}</span>
-                        <span>{formatFactor(area, "competition")}</span>
-                        <span>{formatFactor(area, "road_accessibility")}</span>
-                        <label className="compare-control">
+                        </button></span>
+                        <span className="ranking-score" role="cell"><strong>{area.final_score.toFixed(1)}</strong><small>{area.label}</small></span>
+                        <span role="cell">{formatFactor(area, "population_density")}</span>
+                        <span role="cell">{formatFactor(area, "competition")}</span>
+                        <span role="cell">{formatFactor(area, "road_accessibility")}</span>
+                        <span role="cell"><label className="compare-control">
                           <input
                             type="checkbox"
                             checked={selected}
@@ -456,7 +421,7 @@ export function App() {
                             onChange={() => toggleComparison(area.area_id)}
                           />
                           <span>{selected ? "Pinned" : "Pin"}</span>
-                        </label>
+                        </label></span>
                       </div>
                     );
                   })}
@@ -488,11 +453,11 @@ export function App() {
               </div>
               <div className="business-table" role="table" aria-label="Daftar bisnis">
                 <div className="table-row table-head" role="row">
-                  <span>Nama</span><span>Kategori</span><span>Identitas sumber</span>
+                  <span role="columnheader">Nama</span><span role="columnheader">Kategori</span><span role="columnheader">Identitas sumber</span>
                 </div>
                 {businesses.slice(0, 6).map((business) => (
                   <div className="table-row" role="row" key={business.id}>
-                    <span>
+                    <span role="cell">
                       <i className={`business-icon ${business.properties.category}`} aria-hidden="true" />
                       <button
                         className="business-inspect"
@@ -503,8 +468,8 @@ export function App() {
                         {business.properties.name ?? "Nama belum tersedia"}
                       </button>
                     </span>
-                    <span>{categoryLabels[business.properties.category]}</span>
-                    <span className="source-id">OSM {business.properties.source_type}/{business.properties.source_record_id}</span>
+                    <span role="cell">{categoryLabels[business.properties.category]}</span>
+                    <span className="source-id" role="cell">OSM {business.properties.source_type}/{business.properties.source_record_id}</span>
                   </div>
                 ))}
               </div>
@@ -528,6 +493,22 @@ export function App() {
                   <div className="score-context"><span>{categoryLabels[category]}</span><span>{radius / 1000} km radius</span></div>
                 </>
               ) : null}
+            </section>
+
+            <section className="candidate-card" aria-label="Area peluang teratas">
+              <div className="card-title"><h2>Top areas</h2><span>{categoryLabels[category]} · {radius / 1000} km</span></div>
+              <p>Titik representatif kelurahan dengan skor tertinggi.</p>
+              {opportunityError ? <div className="candidate-empty">Ranking belum tersedia.</div> : filteredRankings.length === 0 ? <div className="candidate-empty">Belum ada area sesuai filter.</div> : (
+                <div className="candidate-list">
+                  {filteredRankings.slice(0, 3).map((area) => (
+                    <button type="button" key={area.area_id} onClick={() => selectLocation(area.longitude, area.latitude)}>
+                      <span className="candidate-rank">{String(area.rank).padStart(2, "0")}</span>
+                      <span className="candidate-name"><strong>{area.area_name}</strong><small>Analisis titik area</small></span>
+                      <span className="candidate-score">{area.final_score.toFixed(1)}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
             </section>
 
             <section className="metric-card">
@@ -581,7 +562,7 @@ export function App() {
           <AnalyticsView
             category={category}
             radius={radius}
-            onCategoryChange={setCategory}
+            onCategoryChange={changeCategory}
             onRadiusChange={setRadius}
           />
         </Suspense>

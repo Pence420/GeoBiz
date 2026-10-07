@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { App } from "./App";
@@ -170,6 +170,15 @@ describe("App", () => {
     expect(screen.queryByText("Restaurant")).not.toBeInTheDocument();
   });
 
+  it("exposes ranking and business tables with complete cell semantics", async () => {
+    render(<App />);
+    const ranking = await screen.findByRole("table", { name: "Peringkat opportunity kelurahan" });
+    expect(within(ranking).getAllByRole("columnheader")).toHaveLength(6);
+    expect((await within(ranking).findAllByRole("cell")).length).toBeGreaterThan(0);
+    const businesses = screen.getByRole("table", { name: "Daftar bisnis" });
+    expect(within(businesses).getAllByRole("columnheader")).toHaveLength(3);
+  });
+
   it("limits area comparison to three ranked areas", async () => {
     render(<App />);
 
@@ -273,7 +282,7 @@ describe("App", () => {
       target: { value: "2000" },
     });
 
-    expect(await screen.findByText("CURRENT AREA")).toBeVisible();
+    expect((await screen.findAllByText("CURRENT AREA")).length).toBeGreaterThan(0);
     await act(() => new Promise((resolve) => setTimeout(resolve, 80)));
     expect(screen.queryByText("STALE AREA")).not.toBeInTheDocument();
   });

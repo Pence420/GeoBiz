@@ -24,11 +24,15 @@ test("completes the DKI map exploration journey", async ({ page }) => {
   const radius = page.getByRole("combobox", { name: "Radius", exact: true });
   await radius.selectOption("2000");
   await expect(radius).toHaveValue("2000");
-  const toggles = page.getByLabel("Map layers").getByRole("checkbox");
+  await page.getByText("Layers", { exact: true }).click();
+  const toggles = page.locator(".layer-options").getByRole("checkbox");
   for (let index = 0; index < await toggles.count(); index += 1) {
     await toggles.nth(index).check();
   }
-  await page.getByLabel("Opportunity filters").getByLabel("Minimum score").selectOption("40");
+  await page.getByText("Layers", { exact: true }).click();
+  await page.getByText("Filters", { exact: true }).click();
+  await page.locator(".filter-options").getByLabel("Minimum score").selectOption("40");
+  await page.getByText("Filters", { exact: true }).click();
 
   const compare = page.getByRole("checkbox", { name: /^Compare / });
   await expect(compare.first()).toBeVisible({ timeout: 30_000 });
@@ -37,4 +41,13 @@ test("completes the DKI map exploration journey", async ({ page }) => {
   await compare.nth(2).check();
   await expect(compare.nth(3)).toBeDisabled();
   await expect(page.getByLabel("Area comparison")).toContainText("3/3 pinned");
+});
+
+test("keeps the dashboard within desktop and tablet viewport widths", async ({ page }) => {
+  await page.goto("/");
+  for (const viewport of [{ width: 1440, height: 900 }, { width: 768, height: 1024 }]) {
+    await page.setViewportSize(viewport);
+    await expect(page.getByLabel("Peta interaktif bisnis DKI Jakarta")).toBeVisible();
+    await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  }
 });
