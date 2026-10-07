@@ -105,6 +105,19 @@ beforeEach(() => {
 });
 
 describe("App", () => {
+  it("does not present a failed business layer as complete", async () => {
+    const baselineFetch = vi.mocked(fetch);
+    vi.stubGlobal("fetch", vi.fn((input: string | URL | Request, init?: RequestInit) => {
+      if (String(input).includes("/businesses")) {
+        return Promise.resolve(Response.json({ detail: { message: "Business page unavailable" } }, { status: 503 }));
+      }
+      return baselineFetch(input, init);
+    }));
+    render(<App />);
+    expect(await screen.findByText("Data bisnis peta belum lengkap")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Coba muat bisnis lagi" })).toBeVisible();
+  });
+
   it("renders the GeoBiz product name", async () => {
     render(<App />);
 

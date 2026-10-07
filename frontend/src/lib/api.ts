@@ -305,11 +305,22 @@ export function fetchDemographics() {
   return request<Demographics>("/demographics");
 }
 
-export async function fetchBusinesses(category: BusinessCategory) {
-  const payload = await request<{ features: BusinessFeature[] }>(
-    `/businesses?category=${category}&limit=3000`,
-  );
-  return payload.features;
+export async function fetchBusinesses(category: BusinessCategory, expectedReleaseId: number) {
+  const pageSize = 1000;
+  const features: BusinessFeature[] = [];
+  const seen = new Set<number>();
+  for (let offset = 0; offset < 100_000; offset += pageSize) {
+    const payload = await request<{ features: BusinessFeature[] }>(
+      `/businesses?category=${category}&limit=${pageSize}&offset=${offset}&expected_release_id=${expectedReleaseId}`,
+    );
+    for (const feature of payload.features) {
+      if (seen.has(feature.id)) throw new Error("Business data page repeated an ID; reload the page.");
+      seen.add(feature.id);
+      features.push(feature);
+    }
+    if (payload.features.length < pageSize) return features;
+  }
+  throw new Error("Business layer exceeded the safe page limit; narrow the data scope.");
 }
 
 export async function fetchPopulationLayer(expectedReleaseId?: number) {

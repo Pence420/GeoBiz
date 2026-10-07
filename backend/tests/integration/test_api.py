@@ -62,9 +62,28 @@ def test_businesses_returns_real_source_identity_as_geojson(db_session) -> None:
         ),
         {"category_id": category_id, "source_id": source_id},
     )
+    db_session.execute(
+        text(
+            """
+            INSERT INTO businesses (
+                data_release_id, category_id, dataset_source_id, name, source_type,
+                source_record_id, business_subtype, taxonomy_version,
+                retrieved_at, original_tags, geom
+            ) VALUES (
+                (SELECT id FROM data_releases WHERE status = 'active'),
+                :category_id, :source_id, 'API Test Bakery', 'node',
+                '987654322', 'bakery', 'v2.0.0', now(),
+                '{"name":"API Test Bakery"}'::jsonb,
+                ST_SetSRID(ST_Point(106.821, -6.18), 4326)
+            )
+            """
+        ),
+        {"category_id": category_id, "source_id": source_id},
+    )
 
     try:
-        response = _client(db_session).get(
+        client = _client(db_session)
+        response = client.get(
             "/api/businesses",
             params={
                 "category": "fnb",
@@ -74,6 +93,10 @@ def test_businesses_returns_real_source_identity_as_geojson(db_session) -> None:
                 "north": -6.17,
             },
         )
+        first_page = client.get("/api/businesses", params={"category": "fnb", "limit": 1, "offset": 0})
+        second_page = client.get("/api/businesses", params={"category": "fnb", "limit": 1, "offset": 1})
+        invalid_offset = client.get("/api/businesses", params={"offset": -1})
+        changed_release = client.get("/api/businesses", params={"expected_release_id": -1})
     finally:
         app.dependency_overrides.clear()
 
@@ -86,6 +109,11 @@ def test_businesses_returns_real_source_identity_as_geojson(db_session) -> None:
     assert feature["properties"]["name"] == "API Test Restaurant"
     assert feature["geometry"] == {"type": "Point", "coordinates": [106.82, -6.18]}
     assert payload["attribution"] == "© OpenStreetMap contributors"
+    assert first_page.status_code == second_page.status_code == 200
+    assert first_page.json()["features"][0]["id"] != second_page.json()["features"][0]["id"]
+    assert invalid_offset.status_code == 422
+    assert changed_release.status_code == 409
+    assert changed_release.json()["detail"]["code"] == "RELEASE_CHANGED"
 
 
 def test_businesses_rejects_inverted_bbox(db_session) -> None:

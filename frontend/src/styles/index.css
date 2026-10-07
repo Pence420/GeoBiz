@@ -83,6 +83,9 @@ main { padding: 12px; background: #f5f6f8; }
 .maplibregl-canvas:focus-visible { outline: 3px solid #3157e8; outline-offset: -3px; }
 .maplibregl-ctrl-group { overflow: hidden; border: 1px solid #d7dae0; border-radius: 9px !important; box-shadow: 0 4px 15px rgba(22, 30, 44, 0.12) !important; }
 .map-hint { margin: 0; padding: 8px 12px; color: #717680; background: #fff; border: 1px solid #e4e6ea; border-top: 0; border-radius: 0 0 13px 13px; font-size: 11px; }
+.business-layer-status { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0; padding: 9px 13px; color: #526952; background: #f2f7ee; border: 1px solid #dfe8dc; border-top: 0; font-size: 12px; }
+.business-layer-error { color: #7c3b33; background: #fff5f2; border-color: #ebc8bf; }
+.business-layer-error button { flex: none; padding: 7px 10px; color: #fff; background: #2c3b27; border: 0; border-radius: 7px; cursor: pointer; }
 
 .locations-panel, .score-card, .metric-card, .factor-card, .population-card, .method-card { background: #fff; border: 1px solid #e4e6ea; border-radius: 13px; }
 .locations-panel { margin-top: 12px; overflow: hidden; }

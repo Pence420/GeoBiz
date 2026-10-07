@@ -93,6 +93,9 @@ export function App() {
     Array<{ slug: BusinessCategory; business_count: number }>
   >([]);
   const [businesses, setBusinesses] = useState<BusinessFeature[]>([]);
+  const [businessLoading, setBusinessLoading] = useState(true);
+  const [businessError, setBusinessError] = useState<string | null>(null);
+  const [businessRequest, setBusinessRequest] = useState(0);
   const [focusedBusiness, setFocusedBusiness] = useState<BusinessFeature | null>(null);
   const [analysis, setAnalysis] = useState<Analysis | null>(null);
   const [populationAreas, setPopulationAreas] = useState<MapLayerFeature[]>([]);
@@ -145,20 +148,27 @@ export function App() {
   }, [mapConfig?.taxonomy_version]);
 
   useEffect(() => {
-    if (mapConfig?.taxonomy_version !== "v2.0.0") return;
+    if (!mapConfig || mapConfig.taxonomy_version !== "v2.0.0") return;
     let cancelled = false;
     setBusinesses([]);
-    fetchBusinesses(category)
+    setBusinessLoading(true);
+    setBusinessError(null);
+    fetchBusinesses(category, mapConfig.release_id)
       .then((features) => {
         if (!cancelled) setBusinesses(features);
       })
-      .catch(() => {
-        if (!cancelled) setBusinesses([]);
+      .catch((requestError: Error) => {
+        if (cancelled) return;
+        setBusinesses([]);
+        setBusinessError(requestError.message || "Data bisnis belum bisa dimuat.");
+      })
+      .finally(() => {
+        if (!cancelled) setBusinessLoading(false);
       });
     return () => {
       cancelled = true;
     };
-  }, [category, mapConfig?.taxonomy_version]);
+  }, [businessRequest, category, mapConfig]);
 
   useEffect(() => {
     if (mapConfig?.taxonomy_version !== "v2.0.0") return;
@@ -412,6 +422,13 @@ export function App() {
                 </div>
               ) : null}
             </div>
+            {businessLoading ? <p className="business-layer-status" role="status">Memuat seluruh titik bisnis…</p> : null}
+            {businessError ? (
+              <div className="business-layer-status business-layer-error" role="alert">
+                <span><strong>Data bisnis peta belum lengkap</strong> · {businessError}</span>
+                <button type="button" onClick={() => setBusinessRequest((value) => value + 1)}>Coba muat bisnis lagi</button>
+              </div>
+            ) : null}
             <p className="map-hint"><span>Klik titik mana pun di dalam DKI Jakarta untuk menghitung ulang.</span><strong>{analysis?.containing_area.name ?? "DKI Jakarta"} · {location.latitude.toFixed(5)}, {location.longitude.toFixed(5)}</strong></p>
 
             <section className="locations-panel opportunity-panel" id="locations">
@@ -475,7 +492,7 @@ export function App() {
             <section className="locations-panel">
               <div className="section-heading">
                 <div><h2>Bisnis nyata di DKI Jakarta</h2><p>Sumber OpenStreetMap, tanpa data buatan.</p></div>
-                <span className="count-badge">{categoryCount.toLocaleString("id-ID")} lokasi</span>
+                <span className="count-badge">{businessLoading ? "Memuat titik…" : businessError ? "Titik belum lengkap" : `${businesses.length.toLocaleString("id-ID")} titik peta`} · {categoryCount.toLocaleString("id-ID")} tercatat</span>
               </div>
               <div className="business-table" role="table" aria-label="Daftar bisnis">
                 <div className="table-row table-head" role="row">

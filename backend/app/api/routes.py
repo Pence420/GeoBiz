@@ -102,9 +102,16 @@ def list_businesses(
     east: Annotated[float, Query(ge=-180, le=180)] = 106.98,
     north: Annotated[float, Query(ge=-90, le=90)] = -5.60,
     limit: Annotated[int, Query(ge=1, le=5000)] = 3000,
+    offset: Annotated[int, Query(ge=0)] = 0,
+    expected_release_id: int | None = None,
 ):
     _validate_bbox(west=west, south=south, east=east, north=north)
     release_id = active_release_id(session)
+    if expected_release_id is not None and expected_release_id != release_id:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "RELEASE_CHANGED", "message": "the active data release changed; reload the page"},
+        )
     rows = session.execute(
         text(
             """
@@ -145,7 +152,7 @@ def list_businesses(
                   :west, :south, :east, :north, 4326
               )
             ORDER BY business.id
-            LIMIT :limit
+            LIMIT :limit OFFSET :offset
             """
         ),
         {
@@ -156,6 +163,7 @@ def list_businesses(
             "east": east,
             "north": north,
             "limit": limit,
+            "offset": offset,
         },
     ).mappings()
     features = [
