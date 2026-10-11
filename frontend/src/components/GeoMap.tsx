@@ -52,6 +52,15 @@ const categoryColors: Record<BusinessCategory, string> = {
   services: "#6d9f62",
 };
 
+const pointLayerLabels: Record<string, string> = {
+  transport: "Transit",
+  commercial: "Commercial",
+  education: "Education",
+  office: "Offices",
+};
+
+const interactiveSourceIds = ["businesses", "transport", "commercial", "education", "office"] as const;
+
 export function GeoMap({
   mapConfig,
   businesses,
@@ -71,6 +80,7 @@ export function GeoMap({
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
+  const popupRef = useRef<maplibregl.Popup | null>(null);
   const [mapError, setMapError] = useState<string | null>(null);
   const [mapLoaded, setMapLoaded] = useState(false);
   const [retryNonce, setRetryNonce] = useState(0);
@@ -93,6 +103,10 @@ export function GeoMap({
       maxZoom: 18,
       attributionControl: false,
     });
+    if (import.meta.env.DEV) {
+      // Let local browser tests target rendered features without guessing screen pixels.
+      (containerRef.current as HTMLDivElement & { __geobizMap?: maplibregl.Map }).__geobizMap = map;
+    }
     map.addControl(
       new maplibregl.NavigationControl({ showCompass: false }),
       "bottom-right",
@@ -103,7 +117,7 @@ export function GeoMap({
     );
     map.addControl(new maplibregl.FullscreenControl(), "bottom-right");
     map.on("click", (event: MapMouseEvent) =>
-      handleMapClick(map, event, onSelectLocation),
+      handleMapClick(map, event, onSelectLocation, popupRef),
     );
     map.on("error", (event) => {
       const message = event.error?.message;
@@ -226,6 +240,7 @@ export function GeoMap({
         id: "transport-points",
         type: "circle",
         source: "transport",
+        filter: ["!", ["has", "point_count"]],
         layout: { visibility: layers.transport ? "visible" : "none" },
         paint: {
           "circle-color": "#36b8e6",
@@ -240,6 +255,7 @@ export function GeoMap({
         id: "commercial-points",
         type: "circle",
         source: "commercial",
+        filter: ["!", ["has", "point_count"]],
         layout: { visibility: layers.commercial ? "visible" : "none" },
         paint: {
           "circle-color": "#f0a43b",
@@ -306,18 +322,26 @@ export function GeoMap({
         },
       });
       updateBusinesses(map, businesses, category);
-      for (const layerId of ["business-points", "business-clusters"]) {
-        map.on("mouseenter", layerId, () => {
-          map.getCanvas().style.cursor = "pointer";
-        });
-        map.on("mouseleave", layerId, () => {
-          map.getCanvas().style.cursor = "";
-        });
+      for (const sourceId of interactiveSourceIds) {
+        const layerPrefix = sourceId === "businesses" ? "business" : sourceId;
+        for (const layerId of [`${layerPrefix}-points`, `${layerPrefix}-clusters`]) {
+          map.on("mouseenter", layerId, () => {
+            map.getCanvas().style.cursor = "pointer";
+          });
+          map.on("mouseleave", layerId, () => {
+            map.getCanvas().style.cursor = "";
+          });
+        }
       }
       setMapLoaded(true);
     });
     mapRef.current = map;
     return () => {
+      popupRef.current?.remove();
+      popupRef.current = null;
+      if (import.meta.env.DEV && containerRef.current) {
+        delete (containerRef.current as HTMLDivElement & { __geobizMap?: maplibregl.Map }).__geobizMap;
+      }
       map.remove();
       mapRef.current = null;
     };
@@ -325,19 +349,24 @@ export function GeoMap({
 
   useEffect(() => {
     const map = mapRef.current;
-    if (!mapLoaded || !map?.isStyleLoaded()) return;
+    if (!mapLoaded || !map) return;
     updateBusinesses(map, businesses, category);
   }, [businesses, category, mapLoaded]);
 
   useEffect(() => {
     const map = mapRef.current;
     if (!mapLoaded || !map || !focusedBusiness) return;
-    showBusinessFeaturePopup(map, focusedBusiness);
+    showBusinessFeaturePopup(map, focusedBusiness, popupRef);
   }, [focusedBusiness, mapLoaded]);
 
   useEffect(() => {
+    popupRef.current?.remove();
+    popupRef.current = null;
+  }, [category]);
+
+  useEffect(() => {
     const map = mapRef.current;
-    if (!mapLoaded || !map?.isStyleLoaded()) return;
+    if (!mapLoaded || !map) return;
     (map.getSource("selection") as GeoJSONSource | undefined)?.setData(
       selectionData(selectedLocation, radius),
     );
@@ -350,7 +379,7 @@ export function GeoMap({
 
   useEffect(() => {
     const map = mapRef.current;
-    if (!mapLoaded || !map?.isStyleLoaded()) return;
+    if (!mapLoaded || !map) return;
     setSourceData(map, "population", populationAreas);
     setSourceData(map, "opportunity", opportunityAreas);
     setSourceData(map, "transport", transportPoints);
@@ -444,21 +473,29 @@ function handleMapClick(
   map: maplibregl.Map,
   event: MapMouseEvent,
   onSelectLocation: (longitude: number, latitude: number) => void,
+  popupRef: React.RefObject<maplibregl.Popup | null>,
 ) {
-  const business = map.getLayer("business-points")
-    ? map.queryRenderedFeatures(event.point, { layers: ["business-points"] })[0]
-    : undefined;
-  if (business?.geometry.type === "Point") {
-    showBusinessPopup(map, business);
+  const layerIds = interactiveSourceIds.flatMap((sourceId) => {
+    const prefix = sourceId === "businesses" ? "business" : sourceId;
+    return [`${prefix}-points`, `${prefix}-clusters`];
+  }).filter((layerId) => Boolean(map.getLayer(layerId)));
+  const feature = map.queryRenderedFeatures(event.point, { layers: layerIds })[0];
+  if (feature?.geometry.type !== "Point") {
+    popupRef.current?.remove();
+    popupRef.current = null;
+    selectMapLocation(map, event, onSelectLocation);
     return;
   }
-  const cluster = map.getLayer("business-clusters")
-    ? map.queryRenderedFeatures(event.point, { layers: ["business-clusters"] })[0]
-    : undefined;
-  const clusterId = Number(cluster?.properties?.cluster_id);
-  if (cluster?.geometry.type === "Point" && Number.isInteger(clusterId)) {
-    const coordinates = cluster.geometry.coordinates.slice() as [number, number];
-    const source = map.getSource("businesses") as GeoJSONSource;
+  const coordinates = feature.geometry.coordinates.slice() as [number, number];
+  const sourceId = String(feature.layer.source);
+  if (feature.layer.id.endsWith("-points")) {
+    if (sourceId === "businesses") showBusinessPopup(map, feature, popupRef);
+    else showPointPopup(map, feature, sourceId, popupRef);
+    return;
+  }
+  const clusterId = Number(feature.properties?.cluster_id);
+  if (feature.layer.id.endsWith("-clusters") && Number.isInteger(clusterId)) {
+    const source = map.getSource(sourceId) as GeoJSONSource;
     void source.getClusterExpansionZoom(clusterId).then((zoom) => {
       map.easeTo({ center: coordinates, zoom, duration: 400 });
     }).catch(() => {
@@ -469,7 +506,7 @@ function handleMapClick(
   selectMapLocation(map, event, onSelectLocation);
 }
 
-function showBusinessPopup(map: maplibregl.Map, feature: maplibregl.MapGeoJSONFeature) {
+function showBusinessPopup(map: maplibregl.Map, feature: maplibregl.MapGeoJSONFeature, popupRef: React.RefObject<maplibregl.Popup | null>) {
   if (feature.geometry.type !== "Point") return;
   showBusinessDetails(
     map,
@@ -478,10 +515,11 @@ function showBusinessPopup(map: maplibregl.Map, feature: maplibregl.MapGeoJSONFe
     String(feature.properties?.category || "business"),
     String(feature.properties?.source_type || "record"),
     String(feature.properties?.source_record_id || "unknown"),
+    popupRef,
   );
 }
 
-function showBusinessFeaturePopup(map: maplibregl.Map, business: BusinessFeature) {
+function showBusinessFeaturePopup(map: maplibregl.Map, business: BusinessFeature, popupRef: React.RefObject<maplibregl.Popup | null>) {
   showBusinessDetails(
     map,
     business.geometry.coordinates.slice() as [number, number],
@@ -489,6 +527,7 @@ function showBusinessFeaturePopup(map: maplibregl.Map, business: BusinessFeature
     business.properties.category,
     business.properties.source_type,
     business.properties.source_record_id,
+    popupRef,
   );
 }
 
@@ -499,6 +538,7 @@ function showBusinessDetails(
   businessCategory: string,
   sourceType: string,
   sourceRecordId: string,
+  popupRef: React.RefObject<maplibregl.Popup | null>,
 ) {
   const container = document.createElement("div");
   container.className = "business-popup";
@@ -509,8 +549,45 @@ function showBusinessDetails(
   const source = document.createElement("small");
   source.textContent = `OSM ${sourceType}/${sourceRecordId}`;
   container.append(title, categoryLabel, source);
-  new maplibregl.Popup({ offset: 12 }).setLngLat(coordinates).setDOMContent(container).addTo(map);
+  openDetailsPopup(map, coordinates, container, popupRef);
   map.easeTo({ center: coordinates, zoom: Math.max(map.getZoom(), 14), duration: 400 });
+}
+
+function showPointPopup(
+  map: maplibregl.Map,
+  feature: maplibregl.MapGeoJSONFeature,
+  sourceId: string,
+  popupRef: React.RefObject<maplibregl.Popup | null>,
+) {
+  if (feature.geometry.type !== "Point") return;
+  const container = document.createElement("div");
+  container.className = "point-popup";
+  const title = document.createElement("strong");
+  title.textContent = String(feature.properties?.name || "Nama belum tersedia");
+  const categoryLabel = document.createElement("span");
+  const itemType = String(feature.properties?.item_type || "").replaceAll("_", " ");
+  categoryLabel.textContent = itemType
+    ? `${pointLayerLabels[sourceId] || sourceId} · ${itemType}`
+    : pointLayerLabels[sourceId] || sourceId;
+  const source = document.createElement("small");
+  source.textContent = feature.properties?.source_record_id
+    ? `OSM ID ${feature.properties.source_record_id}`
+    : "OpenStreetMap · ID tidak tersedia";
+  container.append(title, categoryLabel, source);
+  openDetailsPopup(map, feature.geometry.coordinates.slice() as [number, number], container, popupRef);
+}
+
+function openDetailsPopup(
+  map: maplibregl.Map,
+  coordinates: [number, number],
+  container: HTMLElement,
+  popupRef: React.RefObject<maplibregl.Popup | null>,
+) {
+  popupRef.current?.remove();
+  popupRef.current = new maplibregl.Popup({ offset: 12 })
+    .setLngLat(coordinates)
+    .setDOMContent(container)
+    .addTo(map);
 }
 
 function selectMapLocation(
