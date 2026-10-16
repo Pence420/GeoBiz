@@ -2,6 +2,9 @@
   "name": "geobiz-e2e",
   "private": true,
   "version": "0.1.0",
-  "scripts": { "test": "playwright test" },
+  "scripts": {
+    "test": "playwright test",
+    "showcase": "node scripts/capture-showcase.mjs"
+  },
   "devDependencies": { "@playwright/test": "1.63.0" }
 }

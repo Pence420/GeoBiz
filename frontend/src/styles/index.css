@@ -225,10 +225,10 @@ button:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible
 .map-mode-badge.fallback { color: #573c00; background: #ffe39d; }
 .map-error { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .map-error button, .error-state button { flex: none; padding: 7px 9px; color: #fff; background: var(--accent); border: 0; border-radius: 6px; font-size: 9px; font-weight: 700; cursor: pointer; }
-.business-popup { display: flex; flex-direction: column; gap: 3px; min-width: 150px; padding: 3px; }
-.business-popup strong { color: #17191e; font-size: 12px; }
-.business-popup span { color: var(--accent); font-size: 10px; text-transform: capitalize; }
-.business-popup small { color: #7d838d; font-size: 8px; }
+.business-popup, .point-popup { display: flex; flex-direction: column; gap: 3px; min-width: 150px; padding: 3px; }
+.business-popup strong, .point-popup strong { color: #17191e; font-size: 12px; }
+.business-popup span, .point-popup span { color: var(--accent); font-size: 10px; text-transform: capitalize; }
+.business-popup small, .point-popup small { color: #7d838d; font-size: 8px; }
 .business-inspect { border: 0; padding: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
 .business-inspect:hover, .business-inspect:focus-visible { color: var(--accent); text-decoration: underline; }
 .map-hint { display: flex; justify-content: space-between; gap: 12px; }
@@ -502,11 +502,11 @@ button:active { transform: translateY(1px); }
 .map-density-legend .low { background: #cbdcca; }
 .map-density-legend .medium { background: #91b690; }
 .map-density-legend .high { background: #3c7048; }
-.selected-demographic { display: flex; flex-wrap: wrap; gap: 7px 12px; min-height: 40px; margin-top: 13px; padding: 12px; border-radius: 9px; background: #eff5ec; color: #687a68; font-size: 11px; }
-.selected-demographic strong { color: var(--forest); }
+.selected-demographic { display: flex; flex-wrap: wrap; gap: 10px 12px; min-height: 40px; margin-top: 13px; padding: 16px; border-radius: 9px; background: #eff5ec; color: #687a68; font-size: 12px; }
+.selected-demographic strong { display: block; margin-bottom: 4px; color: var(--forest); font-size: clamp(28px, 7vw, 36px); line-height: 1.05; font-weight: 700; font-variant-numeric: tabular-nums; }
 .selected-demographic label { align-self: center; color: var(--forest); font-weight: 650; }
 .selected-demographic select { flex: 1; min-width: 160px; padding: 7px 9px; border: 1px solid #cbdcc4; border-radius: 7px; background: #fff; color: var(--forest); font-size: 11px; }
-.selected-demographic > span { flex-basis: 100%; }
+.selected-demographic > span { flex-basis: 100%; line-height: 1.4; }
 .demographics-view .view-provenance { margin-top: 14px; line-height: 1.5; }
 .demographics-view .view-provenance a { color: #3d7047; }
 
