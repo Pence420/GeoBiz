@@ -8,6 +8,7 @@ from OpenStreetMap; synthetic data is restricted to isolated automated tests.
 ![GeoBiz map explorer showing DKI Jakarta business clusters and location score](showcase/01-map-explorer.png)
 
 [Watch the 38-second demo](showcase/geobiz-demo.mp4) ·
+[Watch the 11-second Map Explorer filters demo](showcase/geobiz-map-filters-demo.mp4) ·
 [Analytics screenshot](showcase/02-analytics.png) ·
 [Demographics screenshot](showcase/03-demographics.png)
 

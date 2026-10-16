@@ -4,7 +4,8 @@
   "version": "0.1.0",
   "scripts": {
     "test": "playwright test",
-    "showcase": "node scripts/capture-showcase.mjs"
+    "showcase": "node scripts/capture-showcase.mjs",
+    "showcase:map": "node scripts/capture-map-demo.mjs"
   },
   "devDependencies": { "@playwright/test": "1.63.0" }
 }
