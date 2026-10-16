@@ -5,6 +5,16 @@ categories **F&B**, **Retail**, and **Services**. It combines traceable public
 datasets with transparent, versioned scoring. Demo records are real businesses
 from OpenStreetMap; synthetic data is restricted to isolated automated tests.
 
+![GeoBiz map explorer showing DKI Jakarta business clusters and location score](showcase/01-map-explorer.png)
+
+[Watch the 38-second demo](showcase/geobiz-demo.mp4) ·
+[Analytics screenshot](showcase/02-analytics.png) ·
+[Demographics screenshot](showcase/03-demographics.png)
+
+The screenshots and video were captured from the running application using
+its active, locally stored dataset. They are not design mockups. Population is
+an official 2025 kelurahan aggregate, not a claim about individual customers.
+
 The v2 application includes:
 
 - an offline-first MapLibre map served from a release-scoped local PMTiles archive;
@@ -19,7 +29,7 @@ The v2 application includes:
 - on-demand, checksum-verified refreshes with atomic activation and rollback;
 - Docker-only operation with no paid API, account, API key, or billing dependency.
 
-## Quick start on this Mac (existing demo data)
+## Run locally with existing demo data
 
 Run commands from the repository root, the folder containing `compose.yaml`.
 You need Git, Docker with the Compose plugin, and `make`. On macOS, either
@@ -34,9 +44,8 @@ docker compose version
 Skip `colima start` if Docker Desktop is already running. `docker info` must
 show a **Server** section before continuing. If it says it cannot connect to
 `unix:///var/run/docker.sock`, the Docker engine is still off or the Docker
-context is wrong; `docker compose up` cannot work yet. On this Mac, Colima is
-normally used and may have been stopped to save RAM. Check `colima status` and
-`docker context ls` if needed.
+context is wrong; `docker compose up` cannot work yet. If you use Colima,
+check `colima status` and `docker context ls` as well.
 
 Then start the app without replacing an existing `.env` or database:
 
@@ -70,9 +79,8 @@ intentionally want to delete the GeoBiz PostgreSQL volume.
 
 ## First install without existing demo data
 
-1. Clone this repository and open its root folder. The newest map-click fixes
-   are currently on `codex/competitor-cluster-click`; check out that branch if
-   you want them before starting. A clone of `main` may show older behavior.
+1. Clone this repository and open its root folder. Use the same Git commit as
+   the demo source laptop if you need identical application behavior.
 2. Install/start Docker Desktop, Docker Engine, or Colima as described above.
    Allow enough free disk space for Docker images, the database, downloads, and
    tilemaker's temporary files; data preparation checks for at least 2 GB free.
