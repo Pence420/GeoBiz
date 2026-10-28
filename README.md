@@ -1,5 +1,36 @@
 # GeoBiz
 
+## Cara cepat nyalain dan matiin (macOS + Colima)
+
+Dari Terminal, masuk ke folder proyek dulu:
+
+```bash
+cd /Users/joshuats/geobiz
+colima start
+test -f .env || cp .env.example .env
+docker compose up -d --build
+make migrate
+docker compose ps
+```
+
+Buka **http://localhost:5173** di browser. Jika halaman belum muncul, tunggu
+sekitar satu menit lalu cek `docker compose ps` dan
+`docker compose logs --tail=50 frontend backend`. Jika halaman muncul tanpa data,
+jalankan `make refresh-status`; database dan file peta demo harus sudah ada.
+Jangan jalankan `make refresh-data` hanya untuk menyalakan demo yang sudah ada.
+
+Untuk mematikan tanpa menghapus data:
+
+```bash
+cd /Users/joshuats/geobiz
+docker compose down
+colima stop
+```
+
+Jika menggunakan Docker Desktop, nyalakan aplikasinya dan lewati perintah
+`colima start`/`colima stop`. Jangan gunakan `docker compose down -v` karena
+itu menghapus volume database.
+
 GeoBiz is a DKI Jakarta business-location intelligence dashboard for the umbrella
 categories **F&B**, **Retail**, and **Services**. It combines traceable public
 datasets with transparent, versioned scoring. Demo records are real businesses
@@ -8,6 +39,7 @@ from OpenStreetMap; synthetic data is restricted to isolated automated tests.
 ![GeoBiz map explorer showing DKI Jakarta business clusters and location score](showcase/01-map-explorer.png)
 
 [Watch the 38-second demo](showcase/geobiz-demo.mp4) ·
+[Watch the 11-second Map Explorer filters demo](showcase/geobiz-map-filters-demo.mp4) ·
 [Analytics screenshot](showcase/02-analytics.png) ·
 [Demographics screenshot](showcase/03-demographics.png)
 
